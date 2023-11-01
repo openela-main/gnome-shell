@@ -1,0 +1,145 @@
+From 7bdd1962213a37f6218fe15ea1a4062dd318672a Mon Sep 17 00:00:00 2001
+From: Will Thompson <wjt@endlessm.com>
+Date: Wed, 28 Aug 2019 15:39:44 +0100
+Subject: [PATCH 1/2] global: Don't trust persistent/runtime state data
+
+An Endless OS system was found in the wild with a malformed
+.local/share/gnome-shell/notifications. When deserialized in Python,
+after passing trusted=True to g_variant_new_from_bytes(), the first
+element of the first struct in the array looks like this:
+
+    In [41]: _38.get_child_value(0).get_child_value(0)
+    Out[41]: GLib.Variant('s', '\Uffffffff\Uffffffff\Uffffffff\Uffffffff\Uffffffff')
+
+When deserialised in GJS, we get:
+
+    gjs> v.get_child_value(0).get_child_value(0)
+    [object variant of type "s"]
+    gjs> v.get_child_value(0).get_child_value(0).get_string()
+    typein:43:1 malformed UTF-8 character sequence at offset 0
+      @typein:43:1
+      @<stdin>:1:34
+
+While g_variant_new_from_bytes() doesn't have much to say about its
+'trusted' parameter, g_variant_new_from_data() does:
+
+> If data is trusted to be serialised data in normal form then trusted
+> should be TRUE. This applies to serialised data created within this
+> process or read from a trusted location on the disk (such as a file
+> installed in /usr/lib alongside your application). You should set
+> trusted to FALSE if data is read from the network, a file in the
+> user's home directory, etc.
+
+Persistent state is read from the user's home directory, so it should
+not be trusted. With trusted=False, the string value above comes out as
+"".
+
+I don't have an explanation for how this file ended up being malformed.
+I also don't have an explanation for when this started crashing: my
+guess is that recent GJS became stricter about validating UTF-8 but I
+could be wrong!
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1552
+---
+ src/shell-global.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/shell-global.c b/src/shell-global.c
+index 4b33778e0..33046f614 100644
+--- a/src/shell-global.c
++++ b/src/shell-global.c
+@@ -1707,7 +1707,7 @@ load_variant (GFile      *dir,
+   else
+     {
+       GBytes *bytes = g_mapped_file_get_bytes (mfile);
+-      res = g_variant_new_from_bytes (G_VARIANT_TYPE (property_type), bytes, TRUE);
++      res = g_variant_new_from_bytes (G_VARIANT_TYPE (property_type), bytes, FALSE);
+       g_bytes_unref (bytes);
+       g_mapped_file_unref (mfile);
+     }
+-- 
+2.35.1
+
+
+From 13dcb3e4400b92a0d2f548e88b70b358240d462c Mon Sep 17 00:00:00 2001
+From: Will Thompson <wjt@endlessm.com>
+Date: Wed, 28 Aug 2019 15:38:03 +0100
+Subject: [PATCH 2/2] notificationDaemon: Catch exceptions while loading
+ notifications
+
+An Endless OS system was found in the wild with a malformed
+.local/share/gnome-shell/notifications which causes _loadNotifications()
+to raise an exception. This exception was not previously handled and
+bubbles all the way out to gnome_shell_plugin_start(), whereupon the
+shell exit(1)s. The user could no longer log into their computer.
+
+Handle exceptions from _loadNotifications(), log them, and attempt to
+continue. Ensure that this._isLoading is set to 'false' even on error,
+so that future calls to _saveNotifications() can overwrite the (corrupt)
+state file.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1552
+---
+ js/ui/notificationDaemon.js | 42 ++++++++++++++++++++-----------------
+ 1 file changed, 23 insertions(+), 19 deletions(-)
+
+diff --git a/js/ui/notificationDaemon.js b/js/ui/notificationDaemon.js
+index 4bdede841..dbe673b88 100644
+--- a/js/ui/notificationDaemon.js
++++ b/js/ui/notificationDaemon.js
+@@ -749,29 +749,33 @@ var GtkNotificationDaemon = class GtkNotificationDaemon {
+     _loadNotifications() {
+         this._isLoading = true;
+ 
+-        let value = global.get_persistent_state('a(sa(sv))', 'notifications');
+-        if (value) {
+-            let sources = value.deep_unpack();
+-            sources.forEach(([appId, notifications]) => {
+-                if (notifications.length == 0)
+-                    return;
+-
+-                let source;
+-                try {
+-                    source = this._ensureAppSource(appId);
+-                } catch(e) {
+-                    if (e instanceof InvalidAppError)
++        try {
++            let value = global.get_persistent_state('a(sa(sv))', 'notifications');
++            if (value) {
++                let sources = value.deep_unpack();
++                sources.forEach(([appId, notifications]) => {
++                    if (notifications.length == 0)
+                         return;
+-                    throw e;
+-                }
+ 
+-                notifications.forEach(([notificationId, notification]) => {
+-                    source.addNotification(notificationId, notification.deep_unpack(), false);
++                    let source;
++                    try {
++                        source = this._ensureAppSource(appId);
++                    } catch (e) {
++                        if (e instanceof InvalidAppError)
++                            return;
++                        throw e;
++                    }
++
++                    notifications.forEach(([notificationId, notification]) => {
++                        source.addNotification(notificationId, notification.deep_unpack(), false);
++                    });
+                 });
+-            });
++            }
++        } catch (e) {
++            logError(e, 'Failed to load saved notifications');
++        } finally {
++            this._isLoading = false;
+         }
+-
+-        this._isLoading = false;
+     }
+ 
+     _saveNotifications() {
+-- 
+2.35.1
+

@@ -1,0 +1,25 @@
+From f5ddd0fc02e99597e4b8506ac35523a6fa8ac22f Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Wed, 4 Mar 2020 16:08:31 +0100
+Subject: [PATCH] Do not change Wacom LEDs through g-s-d
+
+Let the wacom kernel driver sort it out by itself.
+---
+ js/ui/windowManager.js | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/js/ui/windowManager.js b/js/ui/windowManager.js
+index dfe1b44..b2e938c 100644
+--- a/js/ui/windowManager.js
++++ b/js/ui/windowManager.js
+@@ -1037,7 +1037,6 @@ var WindowManager = class {
+ 
+             if (this._gsdWacomProxy) {
+                 this._gsdWacomProxy.SetOLEDLabelsRemote(pad.get_device_node(), labels);
+-                this._gsdWacomProxy.SetGroupModeLEDRemote(pad.get_device_node(), group, mode);
+             }
+         });
+ 
+-- 
+2.24.1
+

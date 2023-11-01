@@ -1,0 +1,111 @@
+From a1c35ebb8f29103035526e6f48eba4ff37551964 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 21 Jun 2018 18:03:31 +0200
+Subject: [PATCH] appDisplay: Show full app name on hover
+
+---
+ data/theme/gnome-shell-sass/_common.scss |  8 ++++
+ js/ui/appDisplay.js                      | 48 ++++++++++++++++++++++++
+ 2 files changed, 56 insertions(+)
+
+diff --git a/data/theme/gnome-shell-sass/_common.scss b/data/theme/gnome-shell-sass/_common.scss
+index 3b0d2bf04..293ea2ab9 100644
+--- a/data/theme/gnome-shell-sass/_common.scss
++++ b/data/theme/gnome-shell-sass/_common.scss
+@@ -1411,6 +1411,14 @@ StScrollBar {
+ 
+   }
+ 
++  .app-well-hover-text {
++      text-align: center;
++      color: $osd_fg_color;
++      background-color: $osd_bg_color;
++      border-radius: 5px;
++      padding: 3px;
++  }
++
+   .app-well-app-running-dot { //running apps indicator
+     width: 10px; height: 3px;
+     background-color: $selected_bg_color;
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index adaefa7dd..a07db6573 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -1478,6 +1478,20 @@ var AppIcon = class AppIcon {
+         this.actor.connect('clicked', this._onClicked.bind(this));
+         this.actor.connect('popup-menu', this._onKeyboardPopupMenu.bind(this));
+ 
++        this._hoverText = null;
++        this._hoverTimeoutId = 0;
++
++        if (this.icon.label) {
++            this._hoverText = new St.Label({ style_class: 'app-well-hover-text',
++                                             text: this.icon.label.text,
++                                             visible: false });
++            this._hoverText.clutter_text.line_wrap = true;
++            Main.layoutManager.addChrome(this._hoverText);
++
++            this.actor.connect('notify::hover', this._syncHoverText.bind(this));
++            this.connect('sync-tooltip', this._syncHoverText.bind(this));
++        }
++
+         this._menu = null;
+         this._menuManager = new PopupMenu.PopupMenuManager(this);
+ 
+@@ -1509,12 +1523,39 @@ var AppIcon = class AppIcon {
+             this.app.disconnect(this._stateChangedId);
+         this._stateChangedId = 0;
+         this._removeMenuTimeout();
++        this._removeHoverTimeout();
++        if (this._hoverText)
++            this._hoverText.destroy();
++        this._hoverText = null;
+     }
+ 
+     _createIcon(iconSize) {
+         return this.app.create_icon_texture(iconSize);
+     }
+ 
++    _syncHoverText() {
++        if (this.shouldShowTooltip()) {
++            if (this._hoverTimeoutId)
++                return;
++
++            this._hoverTimeoutId = Mainloop.timeout_add(300, () => {
++                this._hoverText.style = `max-width: ${2 * this.icon.iconSize}px;`;
++                this._hoverText.ensure_style();
++
++                let [x, y] = this.icon.label.get_transformed_position();
++                let offset = (this._hoverText.width - this.icon.label.width) / 2;
++                this._hoverText.set_position(Math.floor(x - offset), Math.floor(y));
++                this._hoverText.show();
++
++                this._hoverTimeoutId = 0;
++                return GLib.SOURCE_REMOVE;
++            });
++        } else {
++            this._removeHoverTimeout();
++            this._hoverText.hide();
++        }
++    }
++
+     _removeMenuTimeout() {
+         if (this._menuTimeoutId > 0) {
+             Mainloop.source_remove(this._menuTimeoutId);
+@@ -1522,6 +1563,13 @@ var AppIcon = class AppIcon {
+         }
+     }
+ 
++    _removeHoverTimeout() {
++        if (this._hoverTimeoutId > 0) {
++            Mainloop.source_remove(this._hoverTimeoutId);
++            this._hoverTimeoutId = 0;
++        }
++    }
++
+     _updateRunningStyle() {
+         if (this.app.state != Shell.AppState.STOPPED)
+             this._dot.show();
+-- 
+2.21.0
+

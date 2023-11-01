@@ -1,0 +1,36 @@
+From fd8c4dc073b121b1093d68472cac3292d2c6605c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 14 Jun 2021 17:59:39 +0200
+Subject: [PATCH] shellEntry: Disconnect handler on destroy
+
+Actors will get unmapped on destroy, so unless we disconnect from
+the notify::mapped signal, the handler will run one last time and
+try to access methods/properties on the invalidated actor.
+---
+ js/ui/shellEntry.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index 4a30b22f7..53bd1daa1 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -186,7 +186,7 @@ class CapsLockWarning extends St.Label {
+         this._keymap = Clutter.get_default_backend().get_keymap();
+         this._stateChangedId = 0;
+ 
+-        this.connect('notify::mapped', () => {
++        const mappedId = this.connect('notify::mapped', () => {
+             if (this.is_mapped()) {
+                 this._stateChangedId = this._keymap.connect('state-changed',
+                     () => this._sync(true));
+@@ -201,6 +201,7 @@ class CapsLockWarning extends St.Label {
+         this.connect('destroy', () => {
+             if (this._stateChangedId)
+                 this._keymap.disconnect(this._stateChangedId);
++            this.disconnect(mappedId);
+         });
+     }
+ 
+-- 
+2.31.1
+

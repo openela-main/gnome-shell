@@ -1,0 +1,399 @@
+From 119ec213b8f9a9e55ca340dbde10b0d19becab41 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 5 Dec 2019 14:12:47 +0100
+Subject: [PATCH 1/4] perf-helper: Add content for custom drawing
+
+Drawing windows got a lot more involved with the advent of client-side
+decorations. Instead of accounting for visible and invisible borders,
+titlebar and shadows when necessary, just add an empty child for the
+custom drawing.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/887
+---
+ src/shell-perf-helper.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/src/shell-perf-helper.c b/src/shell-perf-helper.c
+index e5eab208b..55bdbef02 100644
+--- a/src/shell-perf-helper.c
++++ b/src/shell-perf-helper.c
+@@ -120,9 +120,9 @@ on_window_map_event (GtkWidget   *window,
+ }
+ 
+ static gboolean
+-on_window_draw (GtkWidget  *window,
+-		cairo_t    *cr,
+-                WindowInfo *info)
++on_child_draw (GtkWidget  *window,
++               cairo_t    *cr,
++               WindowInfo *info)
+ {
+   cairo_rectangle_int_t allocation;
+   double x_offset, y_offset;
+@@ -204,6 +204,7 @@ create_window (int      width,
+                gboolean redraws)
+ {
+   WindowInfo *info;
++  GtkWidget *child;
+ 
+   info = g_new0 (WindowInfo, 1);
+   info->width = width;
+@@ -219,10 +220,13 @@ create_window (int      width,
+   info->pending = TRUE;
+   info->start_time = -1;
+ 
++  child = g_object_new (GTK_TYPE_BOX, "visible", TRUE, "app-paintable", TRUE, NULL);
++  gtk_container_add (GTK_CONTAINER (info->window), child);
++
+   gtk_widget_set_size_request (info->window, width, height);
+   gtk_widget_set_app_paintable (info->window, TRUE);
+   g_signal_connect (info->window, "map-event", G_CALLBACK (on_window_map_event), info);
+-  g_signal_connect (info->window, "draw", G_CALLBACK (on_window_draw), info);
++  g_signal_connect (child, "draw", G_CALLBACK (on_child_draw), info);
+   gtk_widget_show (info->window);
+ 
+   if (info->redraws)
+-- 
+2.26.2
+
+
+From bb4c2acaef4d8fdea50915030c221e1190f704a4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 5 Dec 2019 13:29:38 +0100
+Subject: [PATCH 2/4] perf-helper: Remove unused atoms
+
+Those aren't used for anything, but make the helper dependent on X11.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/887
+---
+ src/shell-perf-helper.c | 18 ------------------
+ 1 file changed, 18 deletions(-)
+
+diff --git a/src/shell-perf-helper.c b/src/shell-perf-helper.c
+index 55bdbef02..d3280de96 100644
+--- a/src/shell-perf-helper.c
++++ b/src/shell-perf-helper.c
+@@ -12,7 +12,6 @@
+ #include <math.h>
+ 
+ #include <gtk/gtk.h>
+-#include <gdk/gdkx.h>
+ 
+ #define BUS_NAME "org.gnome.Shell.PerfHelper"
+ 
+@@ -60,12 +59,6 @@ static GOptionEntry opt_entries[] =
+     { NULL }
+   };
+ 
+-static Display *xdisplay;
+-static Window xroot;
+-static Atom atom_wm_state;
+-static Atom atom__net_wm_name;
+-static Atom atom_utf8_string;
+-
+ static guint timeout_id;
+ static GList *our_windows;
+ static GList *wait_windows_invocations;
+@@ -351,8 +344,6 @@ on_name_lost  (GDBusConnection *connection,
+ int
+ main (int argc, char **argv)
+ {
+-  GdkDisplay *display;
+-  GdkScreen *screen;
+   GOptionContext *context;
+   GError *error = NULL;
+ 
+@@ -368,15 +359,6 @@ main (int argc, char **argv)
+       return 1;
+     }
+ 
+-  display = gdk_display_get_default ();
+-  screen = gdk_screen_get_default ();
+-
+-  xdisplay = gdk_x11_display_get_xdisplay (display);
+-  xroot = gdk_x11_window_get_xid (gdk_screen_get_root_window (screen));
+-  atom_wm_state = gdk_x11_get_xatom_by_name_for_display (display, "WM_STATE");
+-  atom__net_wm_name = gdk_x11_get_xatom_by_name_for_display (display, "_NET_WM_NAME");
+-  atom_utf8_string = gdk_x11_get_xatom_by_name_for_display (display, "UTF8_STRING");
+-
+   g_bus_own_name (G_BUS_TYPE_SESSION,
+                   BUS_NAME,
+                   G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT |
+-- 
+2.26.2
+
+
+From d8b4d72b89340dab46bdcb92ee54bde18dbb9ba9 Mon Sep 17 00:00:00 2001
+From: Olivier Fourdan <ofourdan@redhat.com>
+Date: Fri, 24 Jan 2020 10:59:31 +0100
+Subject: [PATCH 3/4] perf-tool: Spawn perf-tool-helper from gnome-shell
+
+On Wayland, the display server is the Wayland compositor, i.e.
+`gnome-shell` itself.
+
+As a result, we cannot spawn `gnome-shell-perf-helper` before
+`gnome-shell` is started, as `gnome-shell-perf-helper` needs to connect
+to the display server.
+
+So, instead of spawning `gnome-shell-perf-helper` from the perf tool,
+start it from `gnome-shell` itself.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/941
+---
+ js/ui/scripting.js           | 51 ++++++++++++++++++++++------------
+ src/gnome-shell-perf-tool.in | 53 ------------------------------------
+ 2 files changed, 34 insertions(+), 70 deletions(-)
+
+diff --git a/js/ui/scripting.js b/js/ui/scripting.js
+index d227b9ef4..eef8f3887 100644
+--- a/js/ui/scripting.js
++++ b/js/ui/scripting.js
+@@ -3,8 +3,10 @@
+ const { Gio, GLib, Meta, Shell } = imports.gi;
+ const Mainloop = imports.mainloop;
+ 
++const Config = imports.misc.config;
+ const Main = imports.ui.main;
+ const Params = imports.misc.params;
++const Util = imports.misc.util;
+ 
+ const { loadInterfaceXML } = imports.misc.fileUtils;
+ 
+@@ -73,6 +75,12 @@ function _getPerfHelper() {
+     return _perfHelper;
+ }
+ 
++function _spawnPerfHelper() {
++    let path = Config.LIBEXECDIR;
++    let command = `${path}/gnome-shell-perf-helper`;
++    Util.trySpawnCommandLine(command);
++}
++
+ function _callRemote(obj, method, ...args) {
+     return new Promise((resolve, reject) => {
+         args.push((result, excp) => {
+@@ -270,6 +278,25 @@ function _collect(scriptModule, outputFile) {
+     }
+ }
+ 
++async function _runPerfScript(scriptModule, outputFile) {
++    for (let step of scriptModule.run()) {
++        try {
++            await step; // eslint-disable-line no-await-in-loop
++        } catch (err) {
++            log(`Script failed: ${err}\n${err.stack}`);
++            Meta.exit(Meta.ExitCode.ERROR);
++        }
++    }
++
++    try {
++        _collect(scriptModule, outputFile);
++    } catch (err) {
++        log(`Script failed: ${err}\n${err.stack}`);
++        Meta.exit(Meta.ExitCode.ERROR);
++    }
++    Meta.exit(Meta.ExitCode.SUCCESS);
++}
++
+ /**
+  * runPerfScript
+  * @scriptModule: module object with run and finish functions
+@@ -310,23 +337,13 @@ function _collect(scriptModule, outputFile) {
+  * After running the script and collecting statistics from the
+  * event log, GNOME Shell will exit.
+  **/
+-async function runPerfScript(scriptModule, outputFile) {
++function runPerfScript(scriptModule, outputFile) {
+     Shell.PerfLog.get_default().set_enabled(true);
++    _spawnPerfHelper();
+ 
+-    for (let step of scriptModule.run()) {
+-        try {
+-            await step;
+-        } catch (err) {
+-            log(`Script failed: ${err}\n${err.stack}`);
+-            Meta.exit(Meta.ExitCode.ERROR);
+-        }
+-    }
+-
+-    try {
+-        _collect(scriptModule, outputFile);
+-    } catch (err) {
+-        log(`Script failed: ${err}\n${err.stack}`);
+-        Meta.exit(Meta.ExitCode.ERROR);
+-    }
+-    Meta.exit(Meta.ExitCode.SUCCESS);
++    Gio.bus_watch_name(Gio.BusType.SESSION,
++        'org.gnome.Shell.PerfHelper',
++        Gio.BusNameWatcherFlags.NONE,
++        () => _runPerfScript(scriptModule, outputFile),
++        null);
+ }
+diff --git a/src/gnome-shell-perf-tool.in b/src/gnome-shell-perf-tool.in
+index f4b48f730..050c66b30 100755
+--- a/src/gnome-shell-perf-tool.in
++++ b/src/gnome-shell-perf-tool.in
+@@ -24,52 +24,6 @@ def show_version(option, opt_str, value, parser):
+     print("GNOME Shell Performance Test @VERSION@")
+     sys.exit()
+ 
+-def wait_for_dbus_name(wait_name):
+-    loop = GLib.MainLoop()
+-
+-    def on_name_appeared(connection, name, new_owner, *args):
+-        if not (name == wait_name and new_owner != ''):
+-            return
+-        loop.quit()
+-        return
+-
+-    watch_id = Gio.bus_watch_name(Gio.BusType.SESSION,
+-                                  wait_name,
+-                                  Gio.BusNameWatcherFlags.NONE,
+-                                  on_name_appeared,
+-                                  None)
+-
+-    def on_timeout():
+-        print("\nFailed to start %s: timed out" % (wait_name,))
+-        sys.exit(1)
+-    GLib.timeout_add_seconds(7, on_timeout)
+-
+-    loop.run()
+-    Gio.bus_unwatch_name(watch_id)
+-
+-PERF_HELPER_NAME = "org.gnome.Shell.PerfHelper"
+-PERF_HELPER_IFACE = "org.gnome.Shell.PerfHelper"
+-PERF_HELPER_PATH = "/org/gnome/Shell/PerfHelper"
+-
+-def start_perf_helper():
+-    self_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+-    perf_helper_path = "@libexecdir@/gnome-shell-perf-helper"
+-
+-    subprocess.Popen([perf_helper_path])
+-    wait_for_dbus_name (PERF_HELPER_NAME)
+-
+-def stop_perf_helper():
+-    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+-
+-    proxy = Gio.DBusProxy.new_sync(bus,
+-                                   Gio.DBusProxyFlags.NONE,
+-                                   None,
+-                                   PERF_HELPER_NAME,
+-                                   PERF_HELPER_PATH,
+-                                   PERF_HELPER_IFACE,
+-                                   None)
+-    proxy.Exit()
+-
+ def start_shell(perf_output=None):
+     # Set up environment
+     env = dict(os.environ)
+@@ -204,8 +158,6 @@ def run_performance_test():
+     logs = []
+     metric_summaries = {}
+ 
+-    start_perf_helper()
+-
+     for i in range(0, iters):
+         # We create an empty temporary file that the shell will overwrite
+         # with the contents.
+@@ -217,14 +169,12 @@ def run_performance_test():
+         try:
+             normal_exit = run_shell(perf_output=output_file)
+         except:
+-            stop_perf_helper()
+             raise
+         finally:
+             if not normal_exit:
+                 os.remove(output_file)
+ 
+         if not normal_exit:
+-            stop_perf_helper()
+             return False
+ 
+         try:
+@@ -232,7 +182,6 @@ def run_performance_test():
+             output = json.load(f)
+             f.close()
+         except:
+-            stop_perf_helper()
+             raise
+         finally:
+             os.remove(output_file)
+@@ -260,8 +209,6 @@ def run_performance_test():
+ 
+         logs.append(output['log'])
+ 
+-    stop_perf_helper()
+-
+     if options.perf_output or options.perf_upload:
+         # Write a complete report, formatted as JSON. The Javascript/C code that
+         # generates the individual reports we are summarizing here is very careful
+-- 
+2.26.2
+
+
+From 8090db0f29dc72e602be341d43b3113373404b21 Mon Sep 17 00:00:00 2001
+From: Olivier Fourdan <ofourdan@redhat.com>
+Date: Tue, 21 Jan 2020 11:05:58 +0100
+Subject: [PATCH 4/4] perf-tool: Allow to run as a Wayland compositor
+
+`gnome-shell-perf-tool` is initially designed to run on X11, using the
+`--replace` option which does not work when gnome-shell is a Wayland
+compositor.
+
+A solution would be to run `gnome-shell-perf-tool` in place of just
+`gnome-shell` to run the entire perf session under Wayland, but the
+script `gnome-shell-perf-tool` does not spawn `gnome-shell` as a Wayladn
+compositor, so that fails as well.
+
+Add a `--wayland` option to `gnome-shell-perf-tool` so that it can
+optionally spawn gnome-shell as a Wayland compositor so the whole perf
+tool can be starred from a console with:
+
+```
+  $ dbus-run-session -- gnome-shell-perf-tool --wayland
+```
+
+Alternatively, for testing purposes, it can also be started nested with:
+
+```
+  $ dbus-run-session -- gnome-shell-perf-tool --nested
+```
+
+Closes: https://gitlab.gnome.org/GNOME/gnome-shell/issues/2139
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/941
+---
+ src/gnome-shell-perf-tool.in | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/gnome-shell-perf-tool.in b/src/gnome-shell-perf-tool.in
+index 050c66b30..04072c4cd 100755
+--- a/src/gnome-shell-perf-tool.in
++++ b/src/gnome-shell-perf-tool.in
+@@ -45,6 +45,13 @@ def start_shell(perf_output=None):
+     if options.replace:
+         args.append('--replace')
+ 
++    if options.wayland or options.nested:
++        args.append('--wayland')
++        if options.nested:
++            args.append('--nested')
++        else:
++            args.append('--display-server')
++
+     return subprocess.Popen(args, env=env)
+ 
+ def run_shell(perf_output=None):
+@@ -284,6 +291,10 @@ parser.add_option("", "--version", action="callback", callback=show_version,
+ 
+ parser.add_option("-r", "--replace", action="store_true",
+                   help="Replace the running window manager")
++parser.add_option("-w", "--wayland", action="store_true",
++                  help="Run as a Wayland compositor")
++parser.add_option("-n", "--nested", action="store_true",
++                  help="Run as a Wayland nested compositor")
+ 
+ options, args = parser.parse_args()
+ 
+-- 
+2.26.2
+

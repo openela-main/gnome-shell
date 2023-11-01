@@ -1,0 +1,36 @@
+From fb0a9a60ab8f1c0dd96e789969ab9b6e48a9fce4 Mon Sep 17 00:00:00 2001
+From: Olivier Fourdan <ofourdan@redhat.com>
+Date: Tue, 21 Jul 2020 16:33:04 +0200
+Subject: [PATCH] popupMenu: Handle keypress if numlock is enabled
+
+On Wayland, navigating menus with the keyboard would not open drop-down
+menus when NumLock is enabled.
+
+That's old issue (gnome-shell#550) that was not completely fixed with
+commit 88556226 because the lock mask needs to be filtered out in
+_onKeyPress() as well.
+
+Closes: https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/550
+---
+ js/ui/popupMenu.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/popupMenu.js b/js/ui/popupMenu.js
+index 6de081ce81..9835face19 100644
+--- a/js/ui/popupMenu.js
++++ b/js/ui/popupMenu.js
+@@ -801,9 +801,10 @@ var PopupMenu = class extends PopupMenuBase {
+ 
+         let state = event.get_state();
+ 
+-        // if user has a modifier down (except capslock)
++        // if user has a modifier down (except capslock and numlock)
+         // then don't handle the key press here
+         state &= ~Clutter.ModifierType.LOCK_MASK;
++        state &= ~Clutter.ModifierType.MOD2_MASK;
+         state &= Clutter.ModifierType.MODIFIER_MASK;
+ 
+         if (state)
+-- 
+2.26.2
+

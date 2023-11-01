@@ -1,0 +1,66 @@
+From 660ebe0125b591355116934ee57b08010e05246c Mon Sep 17 00:00:00 2001
+From: Rui Matos <tiagomatos@gmail.com>
+Date: Fri, 8 Nov 2013 11:36:04 +0100
+Subject: [PATCH] shellDBus: Add a DBus method to load a single extension
+
+This allows e.g. gnome-tweak-tool to install an extension from a zip
+file and load it into the running shell.
+---
+ .../org.gnome.Shell.Extensions.xml               | 13 +++++++++++++
+ js/ui/shellDBus.js                               | 16 ++++++++++++++++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/data/dbus-interfaces/org.gnome.Shell.Extensions.xml b/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
+index 34a65af44..ce69439fc 100644
+--- a/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
++++ b/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
+@@ -189,6 +189,19 @@
+     -->
+     <method name="CheckForUpdates"/>
+ 
++    <!--
++       LoadUserExtension:
++       @uuid: The UUID of the extension
++       @success: Whether the operation was successful
++
++       Load a newly installed user extension
++    -->
++
++    <method name="LoadUserExtension">
++        <arg type="s" direction="in" name="uuid"/>
++        <arg type="b" direction="out" name="success"/>
++    </method>
++
+     <signal name="ExtensionStatusChanged">
+       <arg type="s" name="uuid"/>
+       <arg type="i" name="state"/>
+diff --git a/js/ui/shellDBus.js b/js/ui/shellDBus.js
+index 19d07acce..112d60feb 100644
+--- a/js/ui/shellDBus.js
++++ b/js/ui/shellDBus.js
+@@ -341,6 +341,22 @@ var GnomeShellExtensions = class {
+         ExtensionDownloader.checkForUpdates();
+     }
+ 
++    LoadUserExtension(uuid) {
++        let extension = ExtensionUtils.extensions[uuid];
++        if (extension)
++            return true;
++
++        let dir = Gio.File.new_for_path(GLib.build_filenamev([global.userdatadir, 'extensions', uuid]));
++        try {
++            extension = ExtensionUtils.createExtensionObject(uuid, dir, ExtensionUtils.ExtensionType.PER_USER);
++            ExtensionSystem.loadExtension(extension);
++        } catch (e) {
++            log('Could not load user extension from %s'.format(dir.get_path()));
++            return false;
++        }
++        return true;
++    }
++
+     get ShellVersion() {
+         return Config.PACKAGE_VERSION;
+     }
+-- 
+2.21.0
+

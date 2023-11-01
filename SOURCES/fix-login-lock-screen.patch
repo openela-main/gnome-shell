@@ -1,0 +1,161 @@
+From 214c4f390faa40199c03a80594313760ffe9c5a6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 20 Sep 2019 13:17:40 +0200
+Subject: [PATCH 1/2] unlockDialog: Use inheritance instead of composition
+
+The screen shield creates the unlock dialog based on the session mode.
+
+However since commit 0c0d76f7d6990 turned LoginDialog into an actor
+subclass (while UnlockDialog kept using the delegate pattern), it is
+no longer possible to handle both objects the same way without warnings.
+
+Allow this again by turning UnlockDialog into an actor subclass as well.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/736
+---
+ js/ui/unlockDialog.js | 46 ++++++++++++++++++++++++-------------------
+ 1 file changed, 26 insertions(+), 20 deletions(-)
+
+diff --git a/js/ui/unlockDialog.js b/js/ui/unlockDialog.js
+index 4b0470f4b..55abb652d 100644
+--- a/js/ui/unlockDialog.js
++++ b/js/ui/unlockDialog.js
+@@ -1,8 +1,7 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+ const { AccountsService, Atk, Clutter,
+-        Gdm, Gio, GLib, Meta, Shell, St } = imports.gi;
+-const Signals = imports.signals;
++        Gdm, Gio, GLib, GObject, Meta, Shell, St } = imports.gi;
+ 
+ const Layout = imports.ui.layout;
+ const Main = imports.ui.main;
+@@ -12,15 +11,19 @@ const AuthPrompt = imports.gdm.authPrompt;
+ // The timeout before going back automatically to the lock screen (in seconds)
+ const IDLE_TIMEOUT = 2 * 60;
+ 
+-var UnlockDialog = class {
+-    constructor(parentActor) {
+-        this.actor = new St.Widget({ accessible_role: Atk.Role.WINDOW,
+-                                     style_class: 'login-dialog',
+-                                     layout_manager: new Clutter.BoxLayout(),
+-                                     visible: false });
++var UnlockDialog = GObject.registerClass({
++    Signals: { 'failed': {} },
++}, class UnlockDialog extends St.Widget {
++    _init(parentActor) {
++        super._init({
++            accessible_role: Atk.Role.WINDOW,
++            style_class: 'login-dialog',
++            layout_manager: new Clutter.BoxLayout(),
++            visible: false,
++        });
+ 
+-        this.actor.add_constraint(new Layout.MonitorConstraint({ primary: true }));
+-        parentActor.add_child(this.actor);
++        this.add_constraint(new Layout.MonitorConstraint({ primary: true }));
++        parentActor.add_child(this);
+ 
+         this._userManager = AccountsService.UserManager.get_default();
+         this._userName = GLib.get_user_name();
+@@ -31,7 +34,7 @@ var UnlockDialog = class {
+                                              y_align: Clutter.ActorAlign.CENTER,
+                                              x_expand: true,
+                                              y_expand: true });
+-        this.actor.add_child(this._promptBox);
++        this.add_child(this._promptBox);
+ 
+         this._gdmClient = new Gdm.Client();
+ 
+@@ -70,10 +73,12 @@ var UnlockDialog = class {
+         this._authPrompt.reset();
+         this._updateSensitivity(true);
+ 
+-        Main.ctrlAltTabManager.addGroup(this.actor, _("Unlock Window"), 'dialog-password-symbolic');
++        Main.ctrlAltTabManager.addGroup(this, _("Unlock Window"), 'dialog-password-symbolic');
+ 
+         this._idleMonitor = Meta.IdleMonitor.get_core();
+         this._idleWatchId = this._idleMonitor.add_idle_watch(IDLE_TIMEOUT * 1000, this._escape.bind(this));
++
++        this.connect('destroy', this._onDestroy.bind(this));
+     }
+ 
+     _updateSensitivity(sensitive) {
+@@ -112,9 +117,8 @@ var UnlockDialog = class {
+         this._authPrompt.cancel();
+     }
+ 
+-    destroy() {
++    _onDestroy() {
+         this.popModal();
+-        this.actor.destroy();
+ 
+         if (this._idleWatchId) {
+             this._idleMonitor.remove_watch(this._idleWatchId);
+@@ -137,13 +141,16 @@ var UnlockDialog = class {
+     }
+ 
+     open(timestamp) {
+-        this.actor.show();
++        this.show();
+ 
+         if (this._isModal)
+             return true;
+ 
+-        if (!Main.pushModal(this.actor, { timestamp: timestamp,
+-                                          actionMode: Shell.ActionMode.UNLOCK_SCREEN }))
++        let modalParams = {
++            timestamp,
++            actionMode: Shell.ActionMode.UNLOCK_SCREEN,
++        };
++        if (!Main.pushModal(this, modalParams))
+             return false;
+ 
+         this._isModal = true;
+@@ -153,9 +160,8 @@ var UnlockDialog = class {
+ 
+     popModal(timestamp) {
+         if (this._isModal) {
+-            Main.popModal(this.actor, timestamp);
++            Main.popModal(this, timestamp);
+             this._isModal = false;
+         }
+     }
+-};
+-Signals.addSignalMethods(UnlockDialog.prototype);
++});
+-- 
+2.31.1
+
+
+From cddeb2f4e38928e0d5e0f3a852961f639536aff3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 20 Sep 2019 13:14:40 +0200
+Subject: [PATCH 2/2] screenShield: Stop using deprecated actor property
+
+Both LoginDialog and UnlockDialog are now actor subclasses, so stop
+using the deprecated actor delegate that will trigger a warning.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/736
+---
+ js/ui/screenShield.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/js/ui/screenShield.js b/js/ui/screenShield.js
+index 2d0a429be..f97a9288a 100644
+--- a/js/ui/screenShield.js
++++ b/js/ui/screenShield.js
+@@ -917,8 +917,8 @@ var ScreenShield = class {
+         this._lockScreenGroup.hide();
+ 
+         if (this._dialog) {
+-            this._dialog.actor.grab_key_focus();
+-            this._dialog.actor.navigate_focus(null, St.DirectionType.TAB_FORWARD, false);
++            this._dialog.grab_key_focus();
++            this._dialog.navigate_focus(null, St.DirectionType.TAB_FORWARD, false);
+         }
+     }
+ 
+-- 
+2.31.1
+

@@ -1,0 +1,56 @@
+From 35cbad572120125d3b823f37d2100b2beee4c1d8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 8 Jun 2017 17:07:56 +0200
+Subject: [PATCH] layout: Make the hot corner optional
+
+Whether people love or hate the hot corner depends in large extents
+on hardware sensitivity and habits, which is hard to get right
+universally. So bite the bullet and support an option to enable or
+disable hot corners ...
+
+https://bugzilla.gnome.org/show_bug.cgi?id=688320
+---
+ js/ui/layout.js | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/layout.js b/js/ui/layout.js
+index 2b3bb7442..beb4c0a5d 100644
+--- a/js/ui/layout.js
++++ b/js/ui/layout.js
+@@ -1,6 +1,6 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+-const { Clutter, GLib, GObject, Meta, Shell, St } = imports.gi;
++const { Clutter, Gio, GLib, GObject, Meta, Shell, St } = imports.gi;
+ const Signals = imports.signals;
+ 
+ const Background = imports.ui.background;
+@@ -267,6 +267,13 @@ var LayoutManager = GObject.registerClass({
+         this._backgroundGroup.lower_bottom();
+         this._bgManagers = [];
+ 
++        this._interfaceSettings = new Gio.Settings({
++            schema_id: 'org.gnome.desktop.interface'
++        });
++
++       this._interfaceSettings.connect('changed::enable-hot-corners',
++                                       this._updateHotCorners.bind(this));
++
+         // Need to update struts on new workspaces when they are added
+         let workspaceManager = global.workspace_manager;
+         workspaceManager.connect('notify::n-workspaces',
+@@ -358,6 +365,11 @@ var LayoutManager = GObject.registerClass({
+         });
+         this.hotCorners = [];
+ 
++        if (!this._interfaceSettings.get_boolean('enable-hot-corners')) {
++            this.emit('hot-corners-changed');
++            return;
++        }
++
+         let size = this.panelBox.height;
+ 
+         // build new hot corners
+-- 
+2.21.0
+

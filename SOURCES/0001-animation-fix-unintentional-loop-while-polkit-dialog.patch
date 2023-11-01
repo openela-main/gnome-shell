@@ -1,0 +1,40 @@
+From 34e6bbeebef37ae688ca0527bde03fa26b143bb7 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Thu, 27 Jun 2019 14:27:34 -0400
+Subject: [PATCH] animation: fix unintentional loop while polkit dialog is
+ active
+
+The polkit password dialog has a spinner that gets displayed
+while the users password is being verified.
+
+Unfortunately, the spinner stop method unintentionally calls
+back into itself after the stop fade out animation is complete.
+The stop method is called at startup, so the looping begins as
+soon as the dialog is visible and continues until the dialog is
+dismissed.
+
+This commit fixes the loop by having the stop method cease
+calling itself, and instead having it call the stop method on the
+superclass.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/602
+---
+ js/ui/animation.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/ui/animation.js b/js/ui/animation.js
+index c21b22565..58d7f4018 100644
+--- a/js/ui/animation.js
++++ b/js/ui/animation.js
+@@ -162,7 +162,7 @@ var Spinner = class extends AnimatedIcon {
+                 time: SPINNER_ANIMATION_TIME,
+                 transition: 'linear',
+                 onComplete: () => {
+-                    this.stop(false);
++                    super.stop();
+                 }
+             });
+         } else {
+-- 
+2.21.0
+

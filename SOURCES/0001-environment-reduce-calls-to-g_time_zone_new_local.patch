@@ -1,0 +1,65 @@
+From 6e80934456f0b4cc48da6a7201700dc4386a3474 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 27 Feb 2020 13:46:44 -0800
+Subject: [PATCH] environment: reduce calls to g_time_zone_new_local()
+
+Creating a new GTimeZone for the local timezone can be quite expensive if
+done repeatedly. It requires an open(), mmap(), and parsing of
+/etc/localtime.
+
+This patch was provided by Florian, and I've tested it as far back as
+3.28.4 to ensure that we are really reducing the number of open() calls
+on the compositor thread.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/1051
+
+Signed-off-by: Christian Hergert <chergert@redhat.com>
+---
+ js/ui/environment.js | 22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/environment.js b/js/ui/environment.js
+index 9c125d3eb..809b48e45 100644
+--- a/js/ui/environment.js
++++ b/js/ui/environment.js
+@@ -11,6 +11,9 @@ imports.gi.versions.TelepathyLogger = '0.2';
+ 
+ const { Clutter, Gio, GLib, Shell, St } = imports.gi;
+ const Gettext = imports.gettext;
++const System = imports.system;
++
++let _localTimeZone = null;
+ 
+ // We can't import shell JS modules yet, because they may have
+ // variable initializations, etc, that depend on init() already having
+@@ -117,9 +120,26 @@ function init() {
+         }
+     };
+ 
++    // Override to clear our own timezone cache as well
++    const origClearDateCaches = System.clearDateCaches;
++    System.clearDateCaches = function () {
++        _localTimeZone = null;
++        origClearDateCaches();
++    };
++
+     // Work around https://bugzilla.mozilla.org/show_bug.cgi?id=508783
+     Date.prototype.toLocaleFormat = function(format) {
+-        return Shell.util_format_date(format, this.getTime());
++        if (_localTimeZone === null)
++            _localTimeZone = GLib.TimeZone.new_local();
++
++        let dt = GLib.DateTime.new(_localTimeZone,
++            this.getYear(),
++            this.getMonth() + 1,
++            this.getDate(),
++            this.getHours(),
++            this.getMinutes(),
++            this.getSeconds());
++        return dt ? dt.format(format) : '';
+     };
+ 
+     let slowdownEnv = GLib.getenv('GNOME_SHELL_SLOWDOWN_FACTOR');
+-- 
+2.31.1
+

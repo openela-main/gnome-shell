@@ -1,0 +1,116 @@
+From 5fad989ca773f9e0ff6fdbeb0cb7c9cb70cc6148 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Tue, 10 Aug 2021 15:31:00 -0400
+Subject: [PATCH 4/4] sessionMode: Allow extensions at the login and unlock
+ screens
+
+Now extensions can specify which session modes they work in,
+but specifying the login screen or unlock screen session modes in
+an extensions metadata still won't work, because those session
+modes disallow extensions.
+
+This commit fixes that.
+---
+ js/ui/sessionMode.js | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/js/ui/sessionMode.js b/js/ui/sessionMode.js
+index fa7f83416..8d8ce1a64 100644
+--- a/js/ui/sessionMode.js
++++ b/js/ui/sessionMode.js
+@@ -12,89 +12,92 @@ const Config = imports.misc.config;
+ const DEFAULT_MODE = 'restrictive';
+ 
+ const _modes = {
+     'restrictive': {
+         parentMode: null,
+         stylesheetName: 'gnome-shell.css',
+         hasOverview: false,
+         showCalendarEvents: false,
+         allowSettings: false,
+         allowExtensions: false,
+         allowScreencast: false,
+         enabledExtensions: [],
+         hasRunDialog: false,
+         hasWorkspaces: false,
+         hasWindows: false,
+         hasNotifications: false,
+         isLocked: false,
+         isGreeter: false,
+         isPrimary: false,
+         unlockDialog: null,
+         components: [],
+         panel: {
+             left: [],
+             center: [],
+             right: []
+         },
+         panelStyle: null
+     },
+ 
+     'gdm': {
++        allowExtensions: true,
+         hasNotifications: true,
+         isGreeter: true,
+         isPrimary: true,
+         unlockDialog: imports.gdm.loginDialog.LoginDialog,
+         components: Config.HAVE_NETWORKMANAGER
+             ? ['networkAgent', 'polkitAgent']
+             : ['polkitAgent'],
+         panel: {
+             left: [],
+             center: ['dateMenu'],
+             right: ['a11y', 'keyboard', 'aggregateMenu']
+         },
+         panelStyle: 'login-screen'
+     },
+ 
+     'lock-screen': {
++        allowExtensions: true,
+         isLocked: true,
+         isGreeter: undefined,
+         unlockDialog: undefined,
+         components: ['polkitAgent', 'telepathyClient'],
+         panel: {
+             left: [],
+             center: [],
+             right: ['aggregateMenu']
+         },
+         panelStyle: 'lock-screen'
+     },
+ 
+     'unlock-dialog': {
++        allowExtensions: true,
+         isLocked: true,
+         unlockDialog: undefined,
+         components: ['polkitAgent', 'telepathyClient'],
+         panel: {
+             left: [],
+             center: [],
+             right: ['a11y', 'keyboard', 'aggregateMenu']
+         },
+         panelStyle: 'unlock-screen'
+     },
+ 
+     'user': {
+         hasOverview: true,
+         showCalendarEvents: true,
+         allowSettings: true,
+         allowExtensions: true,
+         allowScreencast: true,
+         hasRunDialog: true,
+         hasWorkspaces: true,
+         hasWindows: true,
+         hasNotifications: true,
+         isLocked: false,
+         isPrimary: true,
+         unlockDialog: imports.ui.unlockDialog.UnlockDialog,
+         components: Config.HAVE_NETWORKMANAGER ?
+                     ['networkAgent', 'polkitAgent', 'telepathyClient',
+                      'keyring', 'autorunManager', 'automountManager'] :
+                     ['polkitAgent', 'telepathyClient',
+                      'keyring', 'autorunManager', 'automountManager'],
+ 
+-- 
+2.27.0
+

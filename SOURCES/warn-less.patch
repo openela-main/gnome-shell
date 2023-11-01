@@ -1,0 +1,279 @@
+From 37bbb9175bbd061d4ae14e86c35e4211602dbeaa Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 23 Mar 2020 17:57:38 +0100
+Subject: [PATCH 1/4] shell/util: Add touch_file_async() helper
+
+Add a small helper method to asynchronously "touch" a file and return
+whether the file was created or not.
+
+As g_file_make_directory_with_parents() doesn't have an async variant,
+we need a C helper to make the entire operation non-blocking.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/2432
+---
+ src/shell-util.c | 62 ++++++++++++++++++++++++++++++++++++++++++++++++
+ src/shell-util.h |  7 ++++++
+ 2 files changed, 69 insertions(+)
+
+diff --git a/src/shell-util.c b/src/shell-util.c
+index fa3fc08c8..eec67f3d7 100644
+--- a/src/shell-util.c
++++ b/src/shell-util.c
+@@ -323,6 +323,68 @@ shell_get_file_contents_utf8_sync (const char *path,
+   return contents;
+ }
+ 
++static void
++touch_file (GTask        *task,
++            gpointer      object,
++            gpointer      task_data,
++            GCancellable *cancellable)
++{
++  GFile *file = object;
++  g_autoptr (GFile) parent = NULL;
++  g_autoptr (GFileOutputStream) stream = NULL;
++  GError *error = NULL;
++
++  parent = g_file_get_parent (file);
++  g_file_make_directory_with_parents (parent, cancellable, &error);
++
++  if (error && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_EXISTS))
++    {
++      g_task_return_error (task, error);
++      return;
++    }
++  g_clear_error (&error);
++
++  stream = g_file_create (file, G_FILE_CREATE_NONE, cancellable, &error);
++
++  if (error && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_EXISTS))
++    {
++      g_task_return_error (task, error);
++      return;
++    }
++  g_clear_error (&error);
++
++  if (stream)
++    g_output_stream_close (G_OUTPUT_STREAM (stream), NULL, NULL);
++
++  g_task_return_boolean (task, stream != NULL);
++}
++
++void
++shell_util_touch_file_async (GFile               *file,
++                             GAsyncReadyCallback  callback,
++                             gpointer             user_data)
++{
++  g_autoptr (GTask) task = NULL;
++
++  g_return_if_fail (G_IS_FILE (file));
++
++  task = g_task_new (file, NULL, callback, user_data);
++  g_task_set_source_tag (task, shell_util_touch_file_async);
++
++  g_task_run_in_thread (task, touch_file);
++}
++
++gboolean
++shell_util_touch_file_finish (GFile         *file,
++                              GAsyncResult  *res,
++                              GError       **error)
++{
++  g_return_val_if_fail (G_IS_FILE (file), FALSE);
++  g_return_val_if_fail (G_IS_TASK (res), FALSE);
++
++  return g_task_propagate_boolean (G_TASK (res), error);
++}
++
+ /**
+  * shell_util_wifexited:
+  * @status: the status returned by wait() or waitpid()
+diff --git a/src/shell-util.h b/src/shell-util.h
+index 02b8404e9..bedf516ba 100644
+--- a/src/shell-util.h
++++ b/src/shell-util.h
+@@ -32,6 +32,13 @@ gboolean shell_write_string_to_stream          (GOutputStream    *stream,
+ char    *shell_get_file_contents_utf8_sync     (const char       *path,
+                                                 GError          **error);
+ 
++void     shell_util_touch_file_async           (GFile               *file,
++                                                GAsyncReadyCallback  callback,
++                                                gpointer             user_data);
++gboolean shell_util_touch_file_finish          (GFile               *file,
++                                                GAsyncResult        *res,
++                                                GError             **error);
++
+ gboolean shell_util_wifexited                  (int               status,
+                                                 int              *exit);
+ 
+-- 
+2.31.1
+
+
+From 1f75494bea1ef7017d50d77cf5c7ad6b9668d4f5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 23 Mar 2020 18:00:27 +0100
+Subject: [PATCH 2/4] environment: Hook up touch_file to GFile prototype
+
+We don't usually extend introspected types with our own API, but in
+this case it's too tempting to make the helper functions usable with
+Gio._promisify() ...
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/2432
+---
+ js/ui/environment.js | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/environment.js b/js/ui/environment.js
+index e22ec7402..9c125d3eb 100644
+--- a/js/ui/environment.js
++++ b/js/ui/environment.js
+@@ -9,7 +9,7 @@ imports.gi.versions.Gtk = '3.0';
+ imports.gi.versions.TelepathyGLib = '0.12';
+ imports.gi.versions.TelepathyLogger = '0.2';
+ 
+-const { Clutter, GLib, Shell, St } = imports.gi;
++const { Clutter, Gio, GLib, Shell, St } = imports.gi;
+ const Gettext = imports.gettext;
+ 
+ // We can't import shell JS modules yet, because they may have
+@@ -97,6 +97,13 @@ function init() {
+         return St.describe_actor(this);
+     };
+ 
++    Gio._LocalFilePrototype.touch_async = function (callback) {
++        Shell.util_touch_file_async(this, callback);
++    };
++    Gio._LocalFilePrototype.touch_finish = function (result) {
++        return Shell.util_touch_file_finish(this, result);
++    };
++
+     let origToString = Object.prototype.toString;
+     Object.prototype.toString = function() {
+         let base = origToString.call(this);
+-- 
+2.31.1
+
+
+From 4bef23c7176a43f4dcf146e70bbb8aaa701b8cd2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 20 Mar 2020 12:42:04 +0100
+Subject: [PATCH 3/4] main: Do not warn about missing GDM on each login
+
+We now warn on startup if screen locking isn't available, however for
+users who choose not to use GDM or logind, repeating the warning on
+each login is more annoying than helpful.
+
+Instead, limit the warning to the first login on which the screen lock
+became unavailable. That way the notification will still serve the
+intended purpose of informing the user, but without being perceived
+as nagging.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/2432
+---
+ js/ui/main.js | 36 +++++++++++++++++++++++++++++++-----
+ 1 file changed, 31 insertions(+), 5 deletions(-)
+
+diff --git a/js/ui/main.js b/js/ui/main.js
+index 1203b3c39..a3fad158c 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -81,6 +81,9 @@ let _a11ySettings = null;
+ let _themeResource = null;
+ let _oskResource = null;
+ 
++Gio._promisify(Gio._LocalFilePrototype, 'delete_async', 'delete_finish');
++Gio._promisify(Gio._LocalFilePrototype, 'touch_async', 'touch_finish');
++
+ function _sessionUpdated() {
+     if (sessionMode.isPrimary)
+         _loadDefaultStylesheet();
+@@ -242,11 +245,8 @@ function _initializeUI() {
+         }
+ 
+         if (sessionMode.currentMode !== 'gdm' &&
+-            sessionMode.currentMode !== 'initial-setup' &&
+-            screenShield === null) {
+-            notify(_('Screen Lock disabled'),
+-                   _('Screen Locking requires the GNOME display manager.'));
+-        }
++            sessionMode.currentMode !== 'initial-setup')
++            _handleLockScreenWarning();
+ 
+         let perfModuleName = GLib.getenv("SHELL_PERF_MODULE");
+         if (perfModuleName) {
+@@ -257,6 +257,32 @@ function _initializeUI() {
+     });
+ }
+ 
++async function _handleLockScreenWarning() {
++    const path = '%s/lock-warning-shown'.format(global.userdatadir);
++    const file = Gio.File.new_for_path(path);
++
++    const hasLockScreen = screenShield !== null;
++    if (hasLockScreen) {
++        try {
++            await file.delete_async(0, null);
++        } catch (e) {
++            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
++                logError(e);
++        }
++    } else {
++        try {
++            if (!await file.touch_async())
++                return;
++        } catch (e) {
++            logError(e);
++        }
++
++        notify(
++            _('Screen Lock disabled'),
++            _('Screen Locking requires the GNOME display manager.'));
++    }
++}
++
+ function _getStylesheet(name) {
+     let stylesheet;
+ 
+-- 
+2.31.1
+
+
+From c3f34e786826d0ed1af4150190159fed50d9fb87 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 22 Oct 2020 20:11:14 +0200
+Subject: [PATCH 4/4] messageTray: Default to generic policy
+
+How and if notifications are shown is controlled by NotificationPolicy
+objects. But ever since 098bd45, only notification daemon sources or
+notifications associated with an app are hooked up to GSettings.
+
+The hardcoded default policy for built-in notifications (including
+those provided by extensions) arguably made sense back then, but
+now that the main setting has been rebranded as "Do Not Disturb"
+and is exposed prominently in the calendar drop-down, following
+GSettings is a better default.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/3291
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1511>
+---
+ js/ui/messageTray.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/ui/messageTray.js b/js/ui/messageTray.js
+index 8f8130451..f6bdae8e4 100644
+--- a/js/ui/messageTray.js
++++ b/js/ui/messageTray.js
+@@ -731,7 +731,7 @@ var Source = class Source {
+     }
+ 
+     _createPolicy() {
+-        return new NotificationPolicy();
++        return new NotificationGenericPolicy();
+     }
+ 
+     get narrowestPrivacyScope() {
+-- 
+2.31.1
+

@@ -1,0 +1,49 @@
+From 0d95c2087aba7f0b07cb303c1f15d097b45f1b09 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Tue, 28 Apr 2020 23:26:11 +0200
+Subject: [PATCH] main: Unset the right prevFocus actor after the focus stack
+ got shifted
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When a modal that's not on top of the modalActorFocusStack gets popped,
+we shift the focus stack as described in popModal() to ensure the chain
+remains correct. That however destroys the association of a modal actor
+and its prevFocus actor on the focus stack, because the prevFocus actors
+are now moved to different entries of the stack.
+
+Now when a prevFocus actor gets destroyed, we don't handle that case
+correctly and search for the modal actor that was associated with the
+prevFocus actor before the stack was shifted, which means we end up
+unsetting the wrong prevFocus actor.
+
+So fix that and search the stack for the prevFocus actor which is being
+destroyed instead to unset the correct entry.
+
+Thanks to Florian Müllner for figuring out the actual issue and
+proposing this fix.
+
+Fixes https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/2446
+---
+ js/ui/main.js | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/main.js b/js/ui/main.js
+index dd1d8463d..ca3dcaa3c 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -486,7 +486,9 @@ function pushModal(actor, params) {
+     let prevFocusDestroyId;
+     if (prevFocus != null) {
+         prevFocusDestroyId = prevFocus.connect('destroy', () => {
+-            let index = _findModal(actor);
++            const index = modalActorFocusStack.findIndex(
++                record => record.prevFocus === prevFocus);
++
+             if (index >= 0)
+                 modalActorFocusStack[index].prevFocus = null;
+         });
+-- 
+2.35.1
+
