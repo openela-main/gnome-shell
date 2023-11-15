@@ -1,0 +1,33 @@
+From 189add05c07fe9d9bed6c1399b30e51a4a934bd3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 2 Mar 2020 13:46:04 +0100
+Subject: [PATCH 2/6] environment: Fix date conversion
+
+This is a regression from commit 06b690ff21204:
+
+GLib.DateTime.new() expects the full four-digit year, so passing
+the abbreviated year from Date() will result in a bogus datetime.
+
+Today is *not* Saturday March 2nd, 120 ...
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1061
+---
+ js/ui/environment.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/ui/environment.js b/js/ui/environment.js
+index f3f2d17c7..a9cc16dee 100644
+--- a/js/ui/environment.js
++++ b/js/ui/environment.js
+@@ -126,7 +126,7 @@ function init() {
+             _localTimeZone = GLib.TimeZone.new_local();
+ 
+         let dt = GLib.DateTime.new(_localTimeZone,
+-            this.getYear(),
++            this.getFullYear(),
+             this.getMonth() + 1,
+             this.getDate(),
+             this.getHours(),
+-- 
+2.26.2
+

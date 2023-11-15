@@ -1,0 +1,78 @@
+From 391f262aee82ac12fcf99951d6b2df362f734b31 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 15 Jun 2020 20:41:45 +0200
+Subject: [PATCH] shell/app: Handle workspace from startup notifications
+
+Launching applications on a particular workspace works through
+launch contexts and startup notifications. While this is no
+longer required by a launcher/WM split, in theory this allows
+us to reliably identify the correct window to apply startup
+properties to.
+
+However in practice we fail more often than not: Missing support in
+toolkits, differences between display protocols, D-Bus activation
+and single-instance applications all provide their own pitfalls.
+
+So instead, take advantage of the fact that launcher and WM live in
+the same process, and go with the unsophisticated approach: Just
+remember the last workspace that was requested when launching an
+app, then move the next window that is associated with the app to
+that workspace.
+
+This will break X11 applications that set an initial workspace, but
+that's legacy functionality anyway (given that there's no wayland
+protocol for that functionality), and seems a price worth paying
+for making launching apps on workspaces more reliable.
+---
+ src/shell-app.c | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/src/shell-app.c b/src/shell-app.c
+index 7d40186c9..f716bc5f8 100644
+--- a/src/shell-app.c
++++ b/src/shell-app.c
+@@ -1067,6 +1067,10 @@ _shell_app_add_window (ShellApp        *app,
+   if (!app->running_state)
+       create_running_state (app);
+ 
++  if (app->started_on_workspace >= 0)
++    meta_window_change_workspace_by_index (window, app->started_on_workspace, FALSE);
++  app->started_on_workspace = -1;
++
+   app->running_state->window_sort_stale = TRUE;
+   app->running_state->windows = g_slist_prepend (app->running_state->windows, g_object_ref (window));
+   g_signal_connect_object (window, "unmanaged", G_CALLBACK(shell_app_on_unmanaged), app, 0);
+@@ -1156,16 +1160,14 @@ _shell_app_handle_startup_sequence (ShellApp            *app,
+       shell_app_state_transition (app, SHELL_APP_STATE_STARTING);
+       meta_x11_display_focus_the_no_focus_window (x11_display,
+                                                   meta_startup_sequence_get_timestamp (sequence));
+-      app->started_on_workspace = meta_startup_sequence_get_workspace (sequence);
+     }
+ 
+-  if (!starting)
+-    {
+-      if (app->running_state && app->running_state->windows)
+-        shell_app_state_transition (app, SHELL_APP_STATE_RUNNING);
+-      else /* application have > 1 .desktop file */
+-        shell_app_state_transition (app, SHELL_APP_STATE_STOPPED);
+-    }
++  if (starting)
++    app->started_on_workspace = meta_startup_sequence_get_workspace (sequence);
++  else if (app->running_state && app->running_state->windows)
++    shell_app_state_transition (app, SHELL_APP_STATE_RUNNING);
++  else /* application have > 1 .desktop file */
++    shell_app_state_transition (app, SHELL_APP_STATE_STOPPED);
+ }
+ 
+ /**
+@@ -1473,6 +1475,7 @@ static void
+ shell_app_init (ShellApp *self)
+ {
+   self->state = SHELL_APP_STATE_STOPPED;
++  self->started_on_workspace = -1;
+ }
+ 
+ static void
+-- 
+2.29.2
+

@@ -1,0 +1,399 @@
+From b42dd3f87ad5fb6c7ee139cb0de22e0fbb393ba2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 4 Jun 2019 19:22:26 +0000
+Subject: [PATCH 1/2] workspaceSwitcherPopup: Support horizontal layout
+
+While mutter supports a variety of different grid layouts (n columns/rows,
+growing vertically or horizontally from any of the four corners), we
+hardcode a fixed vertical layout of a single column.
+
+Now that mutter exposes the actual layout to us, add support for a more
+traditional horizontal layout as well.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/575
+---
+ data/theme/gnome-shell-sass/_common.scss |  3 +-
+ js/ui/windowManager.js                   | 36 ++++++++--
+ js/ui/workspaceSwitcherPopup.js          | 86 ++++++++++++++++++------
+ 3 files changed, 98 insertions(+), 27 deletions(-)
+
+diff --git a/data/theme/gnome-shell-sass/_common.scss b/data/theme/gnome-shell-sass/_common.scss
+index 293ea2ab9..b1eeb0ce9 100644
+--- a/data/theme/gnome-shell-sass/_common.scss
++++ b/data/theme/gnome-shell-sass/_common.scss
+@@ -680,7 +680,8 @@ StScrollBar {
+     spacing: 8px;
+   }
+ 
+-  .ws-switcher-active-up, .ws-switcher-active-down {
++  .ws-switcher-active-up, .ws-switcher-active-down,
++  .ws-switcher-active-left, .ws-switcher-active-right {
+     height: 50px;
+     background-color: $selected_bg_color;
+     color: $selected_fg_color;
+diff --git a/js/ui/windowManager.js b/js/ui/windowManager.js
+index b9f5fef46..dfe1b4460 100644
+--- a/js/ui/windowManager.js
++++ b/js/ui/windowManager.js
+@@ -2145,6 +2145,8 @@ var WindowManager = class {
+         let [action,,,target] = binding.get_name().split('-');
+         let newWs;
+         let direction;
++        let vertical = workspaceManager.layout_rows == -1;
++        let rtl = Clutter.get_default_text_direction() == Clutter.TextDirection.RTL;
+ 
+         if (action == 'move') {
+             // "Moving" a window to another workspace doesn't make sense when
+@@ -2157,7 +2159,12 @@ var WindowManager = class {
+         }
+ 
+         if (target == 'last') {
+-            direction = Meta.MotionDirection.DOWN;
++            if (vertical)
++                direction = Meta.MotionDirection.DOWN;
++            else if (rtl)
++                direction = Meta.MotionDirection.LEFT;
++            else
++                direction = Meta.MotionDirection.RIGHT;
+             newWs = workspaceManager.get_workspace_by_index(workspaceManager.n_workspaces - 1);
+         } else if (isNaN(target)) {
+             // Prepend a new workspace dynamically
+@@ -2173,16 +2180,33 @@ var WindowManager = class {
+             target--;
+             newWs = workspaceManager.get_workspace_by_index(target);
+ 
+-            if (workspaceManager.get_active_workspace().index() > target)
+-                direction = Meta.MotionDirection.UP;
+-            else
+-                direction = Meta.MotionDirection.DOWN;
++            if (workspaceManager.get_active_workspace().index() > target) {
++                if (vertical)
++                    direction = Meta.MotionDirection.UP;
++                else if (rtl)
++                    direction = Meta.MotionDirection.RIGHT;
++                else
++                    direction = Meta.MotionDirection.LEFT;
++            } else {
++                if (vertical)
++                    direction = Meta.MotionDirection.DOWN;
++                else if (rtl)
++                    direction = Meta.MotionDirection.LEFT;
++                else
++                    direction = Meta.MotionDirection.RIGHT;
++            }
+         }
+ 
+-        if (direction != Meta.MotionDirection.UP &&
++        if (workspaceManager.layout_rows == -1 &&
++            direction != Meta.MotionDirection.UP &&
+             direction != Meta.MotionDirection.DOWN)
+             return;
+ 
++        if (workspaceManager.layout_columns == -1 &&
++            direction != Meta.MotionDirection.LEFT &&
++            direction != Meta.MotionDirection.RIGHT)
++            return;
++
+         if (action == 'switch')
+             this.actionMoveWorkspace(newWs);
+         else
+diff --git a/js/ui/workspaceSwitcherPopup.js b/js/ui/workspaceSwitcherPopup.js
+index 26404eaab..d21c5de4d 100644
+--- a/js/ui/workspaceSwitcherPopup.js
++++ b/js/ui/workspaceSwitcherPopup.js
+@@ -17,41 +17,75 @@ class WorkspaceSwitcherPopupList extends St.Widget {
+         this._itemSpacing = 0;
+         this._childHeight = 0;
+         this._childWidth = 0;
++        this._orientation = global.workspace_manager.layout_rows == -1
++            ? Clutter.Orientation.VERTICAL
++            : Clutter.Orientation.HORIZONTAL;
+ 
+         this.connect('style-changed', () => {
+            this._itemSpacing = this.get_theme_node().get_length('spacing');
+         });
+     }
+ 
+-    vfunc_get_preferred_height(forWidth) {
++    _getPreferredSizeForOrientation(forSize) {
+         let workArea = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
+         let themeNode = this.get_theme_node();
+ 
+-        let availHeight = workArea.height;
+-        availHeight -= themeNode.get_vertical_padding();
++        let availSize;
++        if (this._orientation == Clutter.Orientation.HORIZONTAL)
++            availSize = workArea.width - themeNode.get_horizontal_padding();
++        else
++            availSize = workArea.height - themeNode.get_vertical_padding();
+ 
+-        let height = 0;
++        let size = 0;
+         for (let child of this.get_children()) {
+             let [childMinHeight, childNaturalHeight] = child.get_preferred_height(-1);
+-            let [childMinWidth, childNaturalWidth] = child.get_preferred_width(childNaturalHeight);
+-            height += childNaturalHeight * workArea.width / workArea.height;
++            let height = childNaturalHeight * workArea.width / workArea.height;
++
++            if (this._orientation == Clutter.Orientation.HORIZONTAL) {
++                size += height * workArea.width / workArea.height;
++            } else {
++                size += height;
++            }
+         }
+ 
+         let workspaceManager = global.workspace_manager;
+         let spacing = this._itemSpacing * (workspaceManager.n_workspaces - 1);
+-        height += spacing;
+-        height = Math.min(height, availHeight);
++        size += spacing;
++        size = Math.min(size, availSize);
++
++        if (this._orientation == Clutter.Orientation.HORIZONTAL) {
++            this._childWidth = (size - spacing) / workspaceManager.n_workspaces;
++            return themeNode.adjust_preferred_width(size, size);
++        } else {
++            this._childHeight = (size - spacing) / workspaceManager.n_workspaces;
++            return themeNode.adjust_preferred_height(size, size);
++        }
++    }
++
++    _getSizeForOppositeOrientation() {
++        let workArea = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
+ 
+-        this._childHeight = (height - spacing) / workspaceManager.n_workspaces;
++        if (this._orientation == Clutter.Orientation.HORIZONTAL) {
++            this._childHeight = Math.round(this._childWidth * workArea.height / workArea.width);
++            return [this._childHeight, this._childHeight];
++        } else {
++            this._childWidth = Math.round(this._childHeight * workArea.width / workArea.height);
++            return [this._childWidth, this._childWidth];
++        }
++    }
+ 
+-        return themeNode.adjust_preferred_height(height, height);
++    vfunc_get_preferred_height(forWidth) {
++        if (this._orientation == Clutter.Orientation.HORIZONTAL)
++            return this._getSizeForOppositeOrientation();
++        else
++            return this._getPreferredSizeForOrientation(forWidth);
+     }
+ 
+     vfunc_get_preferred_width(forHeight) {
+-        let workArea = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
+-        this._childWidth = Math.round(this._childHeight * workArea.width / workArea.height);
+-
+-        return [this._childWidth, this._childWidth];
++        if (this._orientation == Clutter.Orientation.HORIZONTAL)
++            return this._getPreferredSizeForOrientation(forHeight);
++        else
++            return this._getSizeForOppositeOrientation();
+     }
+ 
+     vfunc_allocate(box, flags) {
+@@ -62,15 +96,23 @@ class WorkspaceSwitcherPopupList extends St.Widget {
+ 
+         let childBox = new Clutter.ActorBox();
+ 
++        let rtl = this.text_direction == Clutter.TextDirection.RTL;
++        let x = rtl ? box.x2 - this._childWidth : box.x1;
+         let y = box.y1;
+-        let prevChildBoxY2 = box.y1 - this._itemSpacing;
+         for (let child of this.get_children()) {
+-            childBox.x1 = box.x1;
+-            childBox.x2 = box.x1 + this._childWidth;
+-            childBox.y1 = prevChildBoxY2 + this._itemSpacing;
++            childBox.x1 = Math.round(x);
++            childBox.x2 = Math.round(x + this._childWidth);
++            childBox.y1 = Math.round(y);
+             childBox.y2 = Math.round(y + this._childHeight);
+-            y += this._childHeight + this._itemSpacing;
+-            prevChildBoxY2 = childBox.y2;
++
++            if (this._orientation == Clutter.Orientation.HORIZONTAL) {
++                if (rtl)
++                    x -= this._childWidth + this._itemSpacing;
++                else
++                    x += this._childWidth + this._itemSpacing;
++            } else {
++                y += this._childHeight + this._itemSpacing;
++            }
+             child.allocate(childBox, flags);
+         }
+     }
+@@ -123,6 +165,10 @@ class WorkspaceSwitcherPopup extends St.Widget {
+                indicator = new St.Bin({ style_class: 'ws-switcher-active-up' });
+            else if(i == this._activeWorkspaceIndex && this._direction == Meta.MotionDirection.DOWN)
+                indicator = new St.Bin({ style_class: 'ws-switcher-active-down' });
++           else if(i == this._activeWorkspaceIndex && this._direction == Meta.MotionDirection.LEFT)
++               indicator = new St.Bin({ style_class: 'ws-switcher-active-left' });
++           else if(i == this._activeWorkspaceIndex && this._direction == Meta.MotionDirection.RIGHT)
++               indicator = new St.Bin({ style_class: 'ws-switcher-active-right' });
+            else
+                indicator = new St.Bin({ style_class: 'ws-switcher-box' });
+ 
+-- 
+2.21.0
+
+
+From 813976ff69b15ab884d44f5f6a56ae66f407acfd Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 4 Jun 2019 19:49:23 +0000
+Subject: [PATCH 2/2] workspacesView: Support horizontal layout
+
+Just as we did for the workspace switcher popup, support workspaces
+being laid out in a single row in the window picker.
+
+Note that this takes care of the various workspace switch actions in
+the overview (scrolling, panning, touch(pad) gestures) as well as the
+switch animation, but not of the overview's workspace switcher component.
+
+There are currently no plans to support other layouts there, as the
+component is inherently vertical (in fact, it was the whole reason for
+switching the layout in the first place).
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/575
+---
+ js/ui/workspacesView.js | 81 ++++++++++++++++++++++++++++++-----------
+ 1 file changed, 60 insertions(+), 21 deletions(-)
+
+diff --git a/js/ui/workspacesView.js b/js/ui/workspacesView.js
+index fe06d9dae..069937d5a 100644
+--- a/js/ui/workspacesView.js
++++ b/js/ui/workspacesView.js
+@@ -181,26 +181,32 @@ var WorkspacesView = class extends WorkspacesViewBase {
+ 
+             Tweener.removeTweens(workspace.actor);
+ 
+-            let y = (w - active) * this._fullGeometry.height;
++            let params = {};
++            if (workspaceManager.layout_rows == -1)
++                params.y = (w - active) * this._fullGeometry.height;
++            else if (this.actor.text_direction == Clutter.TextDirection.RTL)
++                params.x = (active - w) * this._fullGeometry.width;
++            else
++                params.x = (w - active) * this._fullGeometry.width;
+ 
+             if (showAnimation) {
+-                let params = { y: y,
+-                               time: WORKSPACE_SWITCH_TIME,
+-                               transition: 'easeOutQuad'
+-                             };
++                let tweenParams = Object.assign(params, {
++                    time: WORKSPACE_SWITCH_TIME,
++                    transition: 'easeOutQuad'
++                });
+                 // we have to call _updateVisibility() once before the
+                 // animation and once afterwards - it does not really
+                 // matter which tween we use, so we pick the first one ...
+                 if (w == 0) {
+                     this._updateVisibility();
+-                    params.onComplete = () => {
++                    tweenParams.onComplete = () => {
+                         this._animating = false;
+                         this._updateVisibility();
+                     };
+                 }
+-                Tweener.addTween(workspace.actor, params);
++                Tweener.addTween(workspace.actor, tweenParams);
+             } else {
+-                workspace.actor.set_position(0, y);
++                workspace.actor.set(params);
+                 if (w == 0)
+                     this._updateVisibility();
+             }
+@@ -338,22 +344,39 @@ var WorkspacesView = class extends WorkspacesViewBase {
+             metaWorkspace.activate(global.get_current_time());
+         }
+ 
+-        let last = this._workspaces.length - 1;
+-        let firstWorkspaceY = this._workspaces[0].actor.y;
+-        let lastWorkspaceY = this._workspaces[last].actor.y;
+-        let workspacesHeight = lastWorkspaceY - firstWorkspaceY;
+-
+         if (adj.upper == 1)
+             return;
+ 
+-        let currentY = firstWorkspaceY;
+-        let newY =  - adj.value / (adj.upper - 1) * workspacesHeight;
++        let last = this._workspaces.length - 1;
++
++        if (workspaceManager.layout_rows == -1) {
++            let firstWorkspaceY = this._workspaces[0].actor.y;
++            let lastWorkspaceY = this._workspaces[last].actor.y;
++            let workspacesHeight = lastWorkspaceY - firstWorkspaceY;
++
++            let currentY = firstWorkspaceY;
++            let newY = -adj.value / (adj.upper - 1) * workspacesHeight;
+ 
+-        let dy = newY - currentY;
++            let dy = newY - currentY;
++
++            for (let i = 0; i < this._workspaces.length; i++) {
++                this._workspaces[i].actor.visible = Math.abs(i - adj.value) <= 1;
++                this._workspaces[i].actor.y += dy;
++            }
++        } else {
++            let firstWorkspaceX = this._workspaces[0].actor.x;
++            let lastWorkspaceX = this._workspaces[last].actor.x;
++            let workspacesWidth = lastWorkspaceX - firstWorkspaceX;
+ 
+-        for (let i = 0; i < this._workspaces.length; i++) {
+-            this._workspaces[i].actor.visible = Math.abs(i - adj.value) <= 1;
+-            this._workspaces[i].actor.y += dy;
++            let currentX = firstWorkspaceX;
++            let newX = -adj.value / (adj.upper - 1) * workspacesWidth;
++
++            let dx = newX - currentX;
++
++            for (let i = 0; i < this._workspaces.length; i++) {
++                this._workspaces[i].actor.visible = Math.abs(i - adj.value) <= 1;
++                this._workspaces[i].actor.x += dx;
++            }
+         }
+     }
+ };
+@@ -504,7 +527,12 @@ var WorkspacesDisplay = class {
+     _onPan(action) {
+         let [dist, dx, dy] = action.get_motion_delta(0);
+         let adjustment = this._scrollAdjustment;
+-        adjustment.value -= (dy / this.actor.height) * adjustment.page_size;
++        if (global.workspace_manager.layout_rows == -1)
++            adjustment.value -= (dy / this.actor.height) * adjustment.page_size;
++        else if (this.actor.text_direction == Clutter.TextDirection.RTL)
++            adjustment.value += (dx / this.actor.width) * adjustment.page_size;
++        else
++            adjustment.value -= (dx / this.actor.width) * adjustment.page_size;
+         return false;
+     }
+ 
+@@ -536,7 +564,12 @@ var WorkspacesDisplay = class {
+         let workspaceManager = global.workspace_manager;
+         let active = workspaceManager.get_active_workspace_index();
+         let adjustment = this._scrollAdjustment;
+-        adjustment.value = (active - yRel / this.actor.height) * adjustment.page_size;
++        if (workspaceManager.layout_rows == -1)
++            adjustment.value = (active - yRel / this.actor.height) * adjustment.page_size;
++        else if (this.actor.text_direction == Clutter.TextDirection.RTL)
++            adjustment.value = (active + xRel / this.actor.width) * adjustment.page_size;
++        else
++            adjustment.value = (active - xRel / this.actor.width) * adjustment.page_size;
+     }
+ 
+     _onSwitchWorkspaceActivated(action, direction) {
+@@ -755,6 +788,12 @@ var WorkspacesDisplay = class {
+         case Clutter.ScrollDirection.DOWN:
+             ws = activeWs.get_neighbor(Meta.MotionDirection.DOWN);
+             break;
++        case Clutter.ScrollDirection.LEFT:
++            ws = activeWs.get_neighbor(Meta.MotionDirection.LEFT);
++            break;
++        case Clutter.ScrollDirection.RIGHT:
++            ws = activeWs.get_neighbor(Meta.MotionDirection.RIGHT);
++            break;
+         default:
+             return Clutter.EVENT_PROPAGATE;
+         }
+-- 
+2.21.0
+

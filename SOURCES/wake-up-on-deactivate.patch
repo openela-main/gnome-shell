@@ -1,0 +1,79 @@
+From d6ead50fe230df58ddab822966d69760b00ec920 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 1 Apr 2020 14:48:10 +0200
+Subject: [PATCH 1/2] screenShield: Switch lightboxes off before unlock
+ transition
+
+There is no point in animating a transition with fullscreen black
+rectangles stacked on top, so switch them off before rather than
+after the transition.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1158
+---
+ js/ui/screenShield.js | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/js/ui/screenShield.js b/js/ui/screenShield.js
+index cd38f11fc8..282f29fa30 100644
+--- a/js/ui/screenShield.js
++++ b/js/ui/screenShield.js
+@@ -1221,6 +1221,9 @@ var ScreenShield = class {
+             this._isModal = false;
+         }
+ 
++        this._longLightbox.hide();
++        this._shortLightbox.hide();
++
+         Tweener.addTween(this._lockDialogGroup, {
+             scale_x: 0,
+             scale_y: 0,
+@@ -1237,8 +1240,6 @@ var ScreenShield = class {
+             this._dialog = null;
+         }
+ 
+-        this._longLightbox.hide();
+-        this._shortLightbox.hide();
+         this.actor.hide();
+ 
+         if (this._becameActiveId != 0) {
+-- 
+2.28.0
+
+
+From 39ac7cad68d8c00d98c900b35add637b01eddbbf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 31 Mar 2020 21:07:59 +0200
+Subject: [PATCH 2/2] screenShield: Wake up on deactivate()
+
+Usually the screen is woken up before the shield is deactivated, but
+it is also possible to unlock the session programmatically via the
+org.gnome.ScreenSaver D-Bus API.
+
+The intention is very likely not to unlock a turned off screen in
+that case. Nor does it seem like a good idea to change the lock
+state without any indication.
+
+Waking up the screen is more likely to meet expectations and is
+more reasonable too, so do that.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1158
+---
+ js/ui/screenShield.js | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/js/ui/screenShield.js b/js/ui/screenShield.js
+index 282f29fa30..2d0a429bee 100644
+--- a/js/ui/screenShield.js
++++ b/js/ui/screenShield.js
+@@ -1200,6 +1200,8 @@ var ScreenShield = class {
+         if (Main.sessionMode.currentMode == 'unlock-dialog')
+             Main.sessionMode.popMode('unlock-dialog');
+ 
++        this.emit('wake-up-screen');
++
+         if (this._isGreeter) {
+             // We don't want to "deactivate" any more than
+             // this. In particular, we don't want to drop
+-- 
+2.28.0
+

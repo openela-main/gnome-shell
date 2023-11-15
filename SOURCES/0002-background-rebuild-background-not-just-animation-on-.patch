@@ -1,0 +1,31 @@
+From f27c4224aa96975ae44641612f5fff3772f5c294 Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Mon, 22 Aug 2022 13:06:05 +0200
+Subject: [PATCH] [PATCH 2/4] background: rebuild background, not just
+ animation on  resume
+
+Previously, we would only refresh the animation on resume
+(to handle clock skew).
+
+But we actually need to rebuild the background, too, on nvidia,
+so we should just do a full background change.
+---
+ js/ui/background.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/ui/background.js b/js/ui/background.js
+index 2a404ae..dd11e3e 100644
+--- a/js/ui/background.js
++++ b/js/ui/background.js
+@@ -254,7 +254,7 @@ var Background = class Background {
+             (lm, aboutToSuspend) => {
+                 if (aboutToSuspend)
+                     return;
+-                this._refreshAnimation();
++                this.emit('changed');
+             });
+ 
+         this._settingsChangedSignalId =
+-- 
+2.35.3
+

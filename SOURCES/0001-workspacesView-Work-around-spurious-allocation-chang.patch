@@ -1,0 +1,37 @@
+From b69b404118852f7955f60d1814f5e19ad61ce449 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 12 Jul 2019 03:26:51 +0000
+Subject: [PATCH] workspacesView: Work around spurious allocation changes
+
+For some reason, people are still seeing those after commit d5ebd8c8.
+While this is something we really should figure out, we can work around
+the issue by keeping the view actors hidden until the update is complete.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1065
+---
+ js/ui/workspacesView.js | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/js/ui/workspacesView.js b/js/ui/workspacesView.js
+index 069937d5a..e302296a6 100644
+--- a/js/ui/workspacesView.js
++++ b/js/ui/workspacesView.js
+@@ -666,10 +666,15 @@ var WorkspacesDisplay = class {
+                                                this._scrollValueChanged.bind(this));
+             }
+ 
++            // HACK: Avoid spurious allocation changes while updating views
++            view.actor.hide();
++
+             this._workspacesViews.push(view);
+             Main.layoutManager.overviewGroup.add_actor(view.actor);
+         }
+ 
++        this._workspacesViews.forEach(v => v.actor.show());
++
+         this._updateWorkspacesFullGeometry();
+         this._updateWorkspacesActualGeometry();
+     }
+-- 
+2.21.0
+

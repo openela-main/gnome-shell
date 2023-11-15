@@ -1,0 +1,159 @@
+From 3252f05b8745a5d3118986474793fe3ecc2b041c Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Tue, 19 Apr 2016 13:12:46 -0400
+Subject: [PATCH] loginDialog: allow timed login with disabled user list
+
+At the moment the timed login feature is implemented in the user list.
+If there's no user list, we don't show the indicator anywhere and
+don't proceed with timed login.
+
+This commit allows timed login to work when the user list is disabled.
+It accomplishes this by putting the timed login indicator on the
+auth prompt, in that scenario.
+---
+ data/theme/gnome-shell-sass/_common.scss |  4 +++
+ js/gdm/authPrompt.js                     | 41 +++++++++++++++++++++++-
+ js/gdm/loginDialog.js                    | 25 +++++++++++++--
+ 3 files changed, 67 insertions(+), 3 deletions(-)
+
+diff --git a/data/theme/gnome-shell-sass/_common.scss b/data/theme/gnome-shell-sass/_common.scss
+index a6357baad..c2df28279 100644
+--- a/data/theme/gnome-shell-sass/_common.scss
++++ b/data/theme/gnome-shell-sass/_common.scss
+@@ -1856,6 +1856,10 @@ StScrollBar {
+       padding-bottom: 12px;
+       spacing: 8px;
+       width: 23em;
++      .login-dialog-timed-login-indicator {
++          height: 2px;
++          background-color: darken($fg_color,40%);
++      }
+   }
+ 
+   .login-dialog-prompt-label {
+diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
+index 27eb31a89..cf77b3f26 100644
+--- a/js/gdm/authPrompt.js
++++ b/js/gdm/authPrompt.js
+@@ -1,6 +1,6 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+-const { Clutter, Pango, Shell, St } = imports.gi;
++const { Clutter, GLib, Pango, Shell, St } = imports.gi;
+ const Signals = imports.signals;
+ 
+ const Animation = imports.ui.animation;
+@@ -111,6 +111,11 @@ var AuthPrompt = class {
+ 
+         this._entry.grab_key_focus();
+ 
++        this._timedLoginIndicator = new St.Bin({ style_class: 'login-dialog-timed-login-indicator',
++                                                 scale_x: 0 });
++
++        this.actor.add(this._timedLoginIndicator);
++
+         this._message = new St.Label({ opacity: 0,
+                                        styleClass: 'login-dialog-message' });
+         this._message.clutter_text.line_wrap = true;
+@@ -135,6 +140,40 @@ var AuthPrompt = class {
+         this._defaultButtonWell.add_child(this._spinner.actor);
+     }
+ 
++    showTimedLoginIndicator(time) {
++        let hold = new Batch.Hold();
++
++        this.hideTimedLoginIndicator();
++
++        let startTime = GLib.get_monotonic_time();
++
++        this._timedLoginTimeoutId = GLib.timeout_add (GLib.PRIORITY_DEFAULT, 33,
++            () => {
++                let currentTime = GLib.get_monotonic_time();
++                let elapsedTime = (currentTime - startTime) / GLib.USEC_PER_SEC;
++                this._timedLoginIndicator.scale_x = elapsedTime / time;
++                if (elapsedTime >= time) {
++                    this._timedLoginTimeoutId = 0;
++                    hold.release();
++                    return GLib.SOURCE_REMOVE;
++                }
++
++                return GLib.SOURCE_CONTINUE;
++            });
++
++        GLib.Source.set_name_by_id(this._timedLoginTimeoutId, '[gnome-shell] this._timedLoginTimeoutId');
++
++        return hold;
++    }
++
++    hideTimedLoginIndicator() {
++        if (this._timedLoginTimeoutId) {
++            GLib.source_remove(this._timedLoginTimeoutId);
++            this._timedLoginTimeoutId = 0;
++        }
++        this._timedLoginIndicator.scale_x = 0.;
++    }
++
+     _onDestroy() {
+         if (this._preemptiveAnswerWatchId) {
+             this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 6c4d1357d..b4df6e959 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -734,6 +734,9 @@ var LoginDialog = GObject.registerClass({
+ 
+             if (this._authPrompt.verificationStatus == AuthPrompt.AuthPromptStatus.NOT_VERIFYING)
+                 this._authPrompt.reset();
++
++            if (this._disableUserList && this._timedLoginUserListHold)
++                this._timedLoginUserListHold.release();
+         }
+     }
+ 
+@@ -1020,16 +1023,31 @@ var LoginDialog = GObject.registerClass({
+         let loginItem = null;
+         let animationTime;
+ 
+-        let tasks = [() => this._waitForItemForUser(userName),
++        let tasks = [() => {
++                         if (this._disableUserList)
++                             return;
++
++                         this._timedLoginUserListHold = this._waitForItemForUser(userName);
++
++                         return this._timedLoginUserListHold;
++                     },
+ 
+                      () => {
+-                         loginItem = this._userList.getItemFromUserName(userName);
++                         this._timedLoginUserListHold = null;
++
++
++                         loginItem = this._disableUserList
++                            ? this._authPrompt
++                            : this._userList.getItemFromUserName(userName);
+ 
+                          // If there is an animation running on the item, reset it.
+                          loginItem.hideTimedLoginIndicator();
+                      },
+ 
+                      () => {
++                         if (this._disableUserList)
++                             return;
++
+                          // If we're just starting out, start on the right item.
+                          if (!this._userManager.is_loaded) {
+                              this._userList.jumpToItem(loginItem);
+@@ -1051,6 +1069,9 @@ var LoginDialog = GObject.registerClass({
+                      },
+ 
+                      () => {
++                         if (this._disableUserList)
++                             return;
++
+                          // If idle timeout is done, make sure the timed login indicator is shown
+                          if (delay > _TIMED_LOGIN_IDLE_THRESHOLD &&
+                              this._authPrompt.actor.visible)
+-- 
+2.26.2
+

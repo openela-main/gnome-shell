@@ -1,0 +1,223 @@
+From 530964cc6e5db02633434853debd96069dc2b8d8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Thu, 23 May 2019 06:12:56 +0200
+Subject: [PATCH 1/6] realmd: Set login format to null on start and update if
+ invalid
+
+We were checking an undefined property but that would lead to a a warning.
+Instead we can consider the login format unset until is null, and in case
+update it.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/700
+---
+ js/gdm/realmd.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/js/gdm/realmd.js b/js/gdm/realmd.js
+index 50f3c5899..04cd99787 100644
+--- a/js/gdm/realmd.js
++++ b/js/gdm/realmd.js
+@@ -21,6 +21,7 @@ var Manager = class {
+                                            '/org/freedesktop/realmd',
+                                            this._reloadRealms.bind(this))
+         this._realms = {};
++        this._loginFormat = null;
+ 
+         this._signalId = this._aggregateProvider.connect('g-properties-changed',
+             (proxy, properties) => {
+@@ -86,7 +87,7 @@ var Manager = class {
+     }
+ 
+     get loginFormat() {
+-        if (this._loginFormat !== undefined)
++        if (this._loginFormat)
+             return this._loginFormat;
+ 
+         this._updateLoginFormat();
+-- 
+2.33.1
+
+
+From 988e4b58d64fbf87f0c497315ff2506b269ff7c9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 9 Jun 2020 19:42:21 +0200
+Subject: [PATCH 2/6] popupMenu: Guard against non-menu-item children
+
+This avoid a harmless but annoying warning.
+---
+ js/ui/popupMenu.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/popupMenu.js b/js/ui/popupMenu.js
+index 44818533a..b5115d7f7 100644
+--- a/js/ui/popupMenu.js
++++ b/js/ui/popupMenu.js
+@@ -696,7 +696,8 @@ var PopupMenuBase = class {
+     }
+ 
+     _getMenuItems() {
+-        return this.box.get_children().map(a => a._delegate).filter(item => {
++        const children = this.box.get_children().filter(a => a._delegate !== undefined);
++        return children.map(a => a._delegate).filter(item => {
+             return item instanceof PopupBaseMenuItem || item instanceof PopupMenuSection;
+         });
+     }
+-- 
+2.33.1
+
+
+From 609a8e22e67b63da1e35167d8511400f22641368 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 9 Jun 2020 19:48:06 +0200
+Subject: [PATCH 3/6] st/shadow: Check pipeline when painting
+
+We shouldn't simply assume that st_shadow_helper_update() has been
+called before paint() or that the pipeline was created successfully.
+---
+ src/st/st-shadow.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/src/st/st-shadow.c b/src/st/st-shadow.c
+index f3a22f034..7665de755 100644
+--- a/src/st/st-shadow.c
++++ b/src/st/st-shadow.c
+@@ -289,9 +289,10 @@ st_shadow_helper_paint (StShadowHelper  *helper,
+                         ClutterActorBox *actor_box,
+                         guint8           paint_opacity)
+ {
+-  _st_paint_shadow_with_opacity (helper->shadow,
+-                                 framebuffer,
+-                                 helper->pipeline,
+-                                 actor_box,
+-                                 paint_opacity);
++  if (helper->pipeline != NULL)
++    _st_paint_shadow_with_opacity (helper->shadow,
++                                   framebuffer,
++                                   helper->pipeline,
++                                   actor_box,
++                                   paint_opacity);
+ }
+-- 
+2.33.1
+
+
+From b57d6efccbeb139d6c7c1894f83caa7a26fd6bad Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 5 Jan 2021 21:42:24 +0100
+Subject: [PATCH 4/6] viewSelector: Don't set page parent during construction
+
+gjs now aggressively garbage-collects objects that fall out of scope,
+sometimes too aggressively:
+
+ - we pass a child as construct property to StBin
+ - as a result, the child's ::parent-set handler runs
+ - when calling clutter_actor_get_parent() from that
+   handler, the returned object is garbage-collected
+   *before* the constructor returns (and thus the
+   assignment that would keep it alive)
+
+This is a bug on the gjs side that should be fixed, but we can easily
+work around the issue by setting the child after constructing the
+parent.
+---
+ js/ui/viewSelector.js | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/js/ui/viewSelector.js b/js/ui/viewSelector.js
+index 77146552d..6529ac9a5 100644
+--- a/js/ui/viewSelector.js
++++ b/js/ui/viewSelector.js
+@@ -301,11 +301,13 @@ var ViewSelector = class {
+     _addPage(actor, name, a11yIcon, params) {
+         params = Params.parse(params, { a11yFocus: null });
+ 
+-        let page = new St.Bin({ child: actor,
+-                                x_align: St.Align.START,
+-                                y_align: St.Align.START,
+-                                x_fill: true,
+-                                y_fill: true });
++        let page = new St.Bin({
++            x_align: St.Align.START,
++            y_align: St.Align.START,
++            x_fill: true,
++            y_fill: true,
++        });
++        page.set_child(actor);
+         if (params.a11yFocus)
+             Main.ctrlAltTabManager.addGroup(params.a11yFocus, name, a11yIcon);
+         else
+-- 
+2.33.1
+
+
+From 0c76c91c3d16c8386a242daf367d66057364a5d1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 23 Oct 2020 23:44:48 +0200
+Subject: [PATCH 5/6] workspacesView: Don't set up MetaLater when unparented
+
+We already do the check in the later handler, but if we got
+unparented because the actor is destroyed, then the call to
+get_parent() itself will trigger a (harmless but annoying)
+warning.
+---
+ js/ui/workspacesView.js | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/js/ui/workspacesView.js b/js/ui/workspacesView.js
+index e302296a6..3270900b2 100644
+--- a/js/ui/workspacesView.js
++++ b/js/ui/workspacesView.js
+@@ -715,6 +715,9 @@ var WorkspacesDisplay = class {
+             oldParent.disconnect(this._notifyOpacityId);
+         this._notifyOpacityId = 0;
+ 
++        if (!this.actor.get_parent())
++            return;
++
+         Meta.later_add(Meta.LaterType.BEFORE_REDRAW, () => {
+             let newParent = this.actor.get_parent();
+             if (!newParent)
+-- 
+2.33.1
+
+
+From 4ba01f2fdada7e4b059a0f57a99dc3ff2ddfa8f8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 26 Nov 2021 17:28:54 +0100
+Subject: [PATCH 6/6] workspacesView: Remove later on destroy
+
+We are careful not to schedule the later when the actor is destroyed,
+however it is possible that one is still pending at that point (namely
+if the actor was never shown).
+---
+ js/ui/workspacesView.js | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/workspacesView.js b/js/ui/workspacesView.js
+index 3270900b2..9dc05fca7 100644
+--- a/js/ui/workspacesView.js
++++ b/js/ui/workspacesView.js
+@@ -449,6 +449,11 @@ var WorkspacesDisplay = class {
+         this.actor._delegate = this;
+         this.actor.connect('notify::allocation', this._updateWorkspacesActualGeometry.bind(this));
+         this.actor.connect('parent-set', this._parentSet.bind(this));
++        this.actor.connect('destroy', () => {
++            if (this._laterId)
++                Meta.later_remove(this._laterId);
++            this._laterId = 0;
++        });
+ 
+         let clickAction = new Clutter.ClickAction();
+         clickAction.connect('clicked', action => {
+@@ -718,7 +723,7 @@ var WorkspacesDisplay = class {
+         if (!this.actor.get_parent())
+             return;
+ 
+-        Meta.later_add(Meta.LaterType.BEFORE_REDRAW, () => {
++        this._laterId = Meta.later_add(Meta.LaterType.BEFORE_REDRAW, () => {
+             let newParent = this.actor.get_parent();
+             if (!newParent)
+                 return;
+-- 
+2.33.1
+

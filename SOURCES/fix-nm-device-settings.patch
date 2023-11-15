@@ -1,0 +1,131 @@
+From e2a1b737156804e2647e5de938c3d170c11b6ba4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 31 Jul 2020 20:40:36 +0200
+Subject: [PATCH 1/2] status/network: Use D-Bus to launch Settings panels
+
+For more obscure network configurations, we need to launch the
+corresponding Settings panel with additional parameters, so we
+cannot simply launch the .desktop file.
+
+However we can do better than spawning a command line: Control center
+exposes an application action we can use instead, so the process is
+launched with the appropriate activation environment and startup
+notification support.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1385
+---
+ js/ui/status/network.js | 33 +++++++++++++++++++++++++++++----
+ 1 file changed, 29 insertions(+), 4 deletions(-)
+
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index f8991d02f..0e7e82ce0 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -15,6 +15,8 @@ const Util = imports.misc.util;
+ 
+ const { loadInterfaceXML } = imports.misc.fileUtils;
+ 
++Gio._promisify(Gio.DBusConnection.prototype, 'call', 'call_finish');
++
+ const NMConnectionCategory = {
+     INVALID: 'invalid',
+     WIRED: 'wired',
+@@ -75,6 +77,30 @@ function ensureActiveConnectionProps(active, client) {
+     }
+ }
+ 
++function launchSettingsPanel(panel, ...args) {
++    const param = new GLib.Variant('(sav)',
++        [panel, args.map(s => new GLib.Variant('s', s))]);
++    const platformData = {
++        'desktop-startup-id': new GLib.Variant('s',
++            '_TIME%s'.format(global.get_current_time())),
++    };
++    try {
++        Gio.DBus.session.call(
++            'org.gnome.ControlCenter',
++            '/org/gnome/ControlCenter',
++            'org.freedesktop.Application',
++            'ActivateAction',
++            new GLib.Variant('(sava{sv})',
++                ['launch-panel', [param], platformData]),
++            null,
++            Gio.DBusCallFlags.NONE,
++            -1,
++            null);
++    } catch (e) {
++        log('Failed to launch Settings panel: %s'.format(e.message));
++    }
++}
++
+ var NMConnectionItem = class {
+     constructor(section, connection) {
+         this._section = section;
+@@ -534,8 +560,7 @@ var NMDeviceModem = class extends NMConnectionDevice {
+     }
+ 
+     _autoConnect() {
+-        Util.spawn(['gnome-control-center', 'network',
+-                    'connect-3g', this._device.get_path()]);
++        launchSettingsPanel('network', 'connect-3g', this._device.get_path());
+     }
+ 
+     _sessionUpdated() {
+@@ -920,8 +945,8 @@ var NMWirelessDialog = class extends ModalDialog.ModalDialog {
+                 || (accessPoints[0]._secType == NMAccessPointSecurity.WPA_ENT)) {
+                 // 802.1x-enabled APs require further configuration, so they're
+                 // handled in gnome-control-center
+-                Util.spawn(['gnome-control-center', 'wifi', 'connect-8021x-wifi',
+-                            this._device.get_path(), accessPoints[0].get_path()]);
++                launchSettingsPanel('wifi', 'connect-8021x-wifi',
++                    this._device.get_path(), accessPoints[0].get_path());
+             } else {
+                 let connection = new NM.SimpleConnection();
+                 this._client.add_and_activate_connection_async(connection, this._device, accessPoints[0].get_path(), null, null)
+-- 
+2.38.1
+
+
+From 9ca1989fcc73157685742470c25f538d01d8df44 Mon Sep 17 00:00:00 2001
+From: Xiaoguang Wang <xwang@suse.com>
+Date: Mon, 21 Feb 2022 09:11:23 +0800
+Subject: [PATCH 2/2] network: Get dbus path from NMDevice
+
+In the NetworkManager new version the NMDevice.get_path returns pci
+path, we need to use NM prototype to get device dbus path.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/4565
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2194>
+---
+ js/ui/status/network.js | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index 0e7e82ce0..9d6a83b73 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -946,7 +946,7 @@ var NMWirelessDialog = class extends ModalDialog.ModalDialog {
+                 // 802.1x-enabled APs require further configuration, so they're
+                 // handled in gnome-control-center
+                 launchSettingsPanel('wifi', 'connect-8021x-wifi',
+-                    this._device.get_path(), accessPoints[0].get_path());
++                    this._getDeviceDBusPath(), accessPoints[0].get_path());
+             } else {
+                 let connection = new NM.SimpleConnection();
+                 this._client.add_and_activate_connection_async(connection, this._device, accessPoints[0].get_path(), null, null)
+@@ -956,6 +956,11 @@ var NMWirelessDialog = class extends ModalDialog.ModalDialog {
+         this.close();
+     }
+ 
++    _getDeviceDBusPath() {
++        // nm_object_get_path() is shadowed by nm_device_get_path()
++        return NM.Object.prototype.get_path.call(this._device);
++    }
++
+     _notifySsidCb(accessPoint) {
+         if (accessPoint.get_ssid() != null) {
+             accessPoint.disconnect(accessPoint._notifySsidId);
+-- 
+2.38.1
+

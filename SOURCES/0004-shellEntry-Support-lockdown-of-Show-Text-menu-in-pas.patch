@@ -1,0 +1,116 @@
+From ee64cd773bdeef845d02dc84063f926d77090dec Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Wed, 21 Aug 2019 15:06:46 -0400
+Subject: [PATCH 4/4] shellEntry: Support lockdown of "Show Text" menu in
+ password entries
+
+Some deployments require being able to prevent users from showing
+the password they're currently typing.
+
+This commit adds support for that kind of lockdown.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/687
+---
+ js/ui/shellEntry.js | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index 765cede06..c45e4545a 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -1,81 +1,89 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+-const { Clutter, GObject, Pango, Shell, St } = imports.gi;
++const { Clutter, Gio, GObject, Pango, Shell, St } = imports.gi;
+ 
+ const BoxPointer = imports.ui.boxpointer;
+ const Main = imports.ui.main;
+ const Params = imports.misc.params;
+ const PopupMenu = imports.ui.popupMenu;
+ const Tweener = imports.ui.tweener;
+ 
++const LOCKDOWN_SCHEMA = 'org.gnome.desktop.lockdown';
++const DISABLE_SHOW_PASSWORD_KEY = 'disable-show-password';
++
+ var EntryMenu = class extends PopupMenu.PopupMenu {
+     constructor(entry) {
+         super(entry, 0, St.Side.TOP);
+ 
++        this._lockdownSettings = new Gio.Settings({ schema_id: LOCKDOWN_SCHEMA });
++        this._lockdownSettings.connect('changed::' + DISABLE_SHOW_PASSWORD_KEY, this._resetPasswordItem.bind(this));
++
+         this._entry = entry;
+         this._clipboard = St.Clipboard.get_default();
+ 
+         // Populate menu
+         let item;
+         item = new PopupMenu.PopupMenuItem(_("Copy"));
+         item.connect('activate', this._onCopyActivated.bind(this));
+         this.addMenuItem(item);
+         this._copyItem = item;
+ 
+         item = new PopupMenu.PopupMenuItem(_("Paste"));
+         item.connect('activate', this._onPasteActivated.bind(this));
+         this.addMenuItem(item);
+         this._pasteItem = item;
+ 
+         this._passwordItem = null;
+ 
+         Main.uiGroup.add_actor(this.actor);
+         this.actor.hide();
+     }
+ 
+     _makePasswordItem() {
+         let item = new PopupMenu.PopupMenuItem('');
+         item.connect('activate', this._onPasswordActivated.bind(this));
+         this.addMenuItem(item);
+         this._passwordItem = item;
+         this._updatePasswordItem();
+     }
+ 
+     _resetPasswordItem() {
+-        if (!this.isPassword) {
++        let passwordDisabled = this._lockdownSettings.get_boolean(DISABLE_SHOW_PASSWORD_KEY);
++
++        if (!this.isPassword || passwordDisabled) {
+             if (this._passwordItem) {
+                 this._passwordItem.destroy();
+                 this._passwordItem = null;
+             }
+             this._entry.clutter_text.set_password_char('\u25cf');
+-        } else {
++        } else if (this.isPassword && !passwordDisabled) {
+             if (!this._passwordItem)
+                 this._makePasswordItem();
+         }
+     }
+ 
+     get isPassword() {
+         return this._entry.input_purpose == Clutter.InputContentPurpose.PASSWORD;
+     }
+ 
+     set isPassword(v) {
+         if (v == this.isPassword)
+             return;
+ 
+         if (v)
+             this._entry.input_purpose = Clutter.InputContentPurpose.PASSWORD;
+         else
+             this._entry.input_purpose = Clutter.InputContentPurpose.NORMAL;
+ 
+         this._resetPasswordItem();
+     }
+ 
+     open(animate) {
+         this._updatePasteItem();
+         this._updateCopyItem();
+         if (this._passwordItem)
+             this._updatePasswordItem();
+ 
+         super.open(animate);
+         this._entry.add_style_pseudo_class('focus');
+ 
+-- 
+2.27.0
+
