@@ -1,0 +1,421 @@
+From a518c9f57e5fe9c6b5ece5c6cb0534a83f0b2f2d Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Mon, 15 Jul 2019 13:52:58 -0400
+Subject: [PATCH 1/8] appDisplay: Don't leak duplicate items in AppView
+
+If an icon already exists in an app view with the same id, the
+duplicate is not added on a call to addItem.  Unfortunately,
+since it's not added, the icon actor gets orphaned and leaked.
+
+This commit address the problem by introducing a new hasItem
+method and disallowing callers to call addItem with a duplicate
+in the first place.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/appDisplay.js | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index a07db6573..fa22f47e0 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -143,10 +143,14 @@ class BaseAppView {
+         return this._allItems;
+     }
+ 
++    hasItem(id) {
++        return this._items[id] !== undefined;
++    }
++
+     addItem(icon) {
+         let id = icon.id;
+-        if (this._items[id] !== undefined)
+-            return;
++	if (this.hasItem(id))
++            throw new Error(`icon with id ${id} already added to view`)
+ 
+         this._allItems.push(icon);
+         this._items[id] = icon;
+@@ -386,6 +390,8 @@ var AllView = class AllView extends BaseAppView {
+ 
+         let folders = this._folderSettings.get_strv('folder-children');
+         folders.forEach(id => {
++            if (this.hasItem(id))
++                return;
+             let path = this._folderSettings.path + 'folders/' + id + '/';
+             let icon = new FolderIcon(id, path, this);
+             icon.connect('name-changed', this._itemNameChanged.bind(this));
+@@ -1165,7 +1171,10 @@ var FolderIcon = class FolderIcon {
+         let excludedApps = this._folder.get_strv('excluded-apps');
+         let appSys = Shell.AppSystem.get_default();
+         let addAppId = appId => {
+-            if (excludedApps.indexOf(appId) >= 0)
++            if (this.view.hasItem(appId))
++                return;
++
++            if (excludedApps.includes(appId))
+                 return;
+ 
+             let app = appSys.lookup_app(appId);
+-- 
+2.23.0
+
+
+From 2b6aa9aed98c4854c2ad015879ddcb8d2bf91e9e Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Mon, 22 Jul 2019 11:06:30 -0400
+Subject: [PATCH 2/8] iconGrid: Clear meta_later callback on destruction
+
+The IconGrid code sometimes sets up a callback to be invoked
+later right before being destroyed.
+
+This commit adds a destroy handler to cancel the callback.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/iconGrid.js | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/js/ui/iconGrid.js b/js/ui/iconGrid.js
+index d51a443e8..1f05e67f3 100644
+--- a/js/ui/iconGrid.js
++++ b/js/ui/iconGrid.js
+@@ -210,6 +210,8 @@ var IconGrid = GObject.registerClass({
+         this.rightPadding = 0;
+         this.leftPadding = 0;
+ 
++        this._updateIconSizesLaterId = 0;
++
+         this._items = [];
+         this._clonesAnimating = [];
+         // Pulled from CSS, but hardcode some defaults here
+@@ -227,6 +229,14 @@ var IconGrid = GObject.registerClass({
+ 
+         this.connect('actor-added', this._childAdded.bind(this));
+         this.connect('actor-removed', this._childRemoved.bind(this));
++        this.connect('destroy', this._onDestroy.bind(this));
++    }
++
++    _onDestroy() {
++        if (this._updateIconSizesLaterId) {
++            Meta.later_remove (this._updateIconSizesLaterId);
++            this._updateIconSizesLaterId = 0;
++        }
+     }
+ 
+     _keyFocusIn(actor) {
+@@ -757,12 +767,14 @@ var IconGrid = GObject.registerClass({
+ 
+             this._updateSpacingForSize(availWidth, availHeight);
+         }
+-        Meta.later_add(Meta.LaterType.BEFORE_REDRAW,
+-                       this._updateIconSizes.bind(this));
++        if (!this._updateIconSizesLaterId)
++            this._updateIconSizesLaterId = Meta.later_add(Meta.LaterType.BEFORE_REDRAW,
++                                                          this._updateIconSizes.bind(this));
+     }
+ 
+     // Note that this is ICON_SIZE as used by BaseIcon, not elsewhere in IconGrid; it's a bit messed up
+     _updateIconSizes() {
++        this._updateIconSizesLaterId = 0;
+         let scale = Math.min(this._fixedHItemSize, this._fixedVItemSize) / Math.max(this._hItemSize, this._vItemSize);
+         let newIconSize = Math.floor(ICON_SIZE * scale);
+         for (let i in this._items) {
+-- 
+2.23.0
+
+
+From 14a2650548a5104d6a3ec7a1174a23264d79030a Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Mon, 22 Jul 2019 11:02:10 -0400
+Subject: [PATCH 3/8] appDisplay: Add AppFolderPopup destroy handler
+
+At the moment AppFolderPopup calls popdown on destruction,
+which leads to open-state-changed getting emitted after
+the actor associated with the popup is destroyed.
+
+This commit handles ungrabbing and closing from an
+actor destroy handler to side-step the open-state-changed
+signal.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/appDisplay.js | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index fa22f47e0..b75d095d5 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -1329,6 +1329,15 @@ var AppFolderPopup = class AppFolderPopup {
+         });
+         this._grabHelper.addActor(Main.layoutManager.overviewGroup);
+         this.actor.connect('key-press-event', this._onKeyPress.bind(this));
++        this.actor.connect('destroy', this._onDestroy.bind(this));
++    }
++
++    _onDestroy() {
++        if (this._isOpen) {
++            this._isOpen = false;
++            this._grabHelper.ungrab({ actor: this.actor });
++            this._grabHelper = null;
++        }
+     }
+ 
+     _onKeyPress(actor, event) {
+-- 
+2.23.0
+
+
+From c9fcb2d23141694ffa2182df20ba75687b01dacc Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Thu, 18 Jul 2019 10:06:38 -0400
+Subject: [PATCH 4/8] appDisplay: Clear AllView reference to current popup when
+ destroyed
+
+AllView contains a reference to the current popup that lingers after
+the popup is destroyed.
+
+This commit fixes that, by explicitly nullifying when appropriate.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/appDisplay.js | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index b75d095d5..dabf63bfd 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -300,6 +300,7 @@ var AllView = class AllView extends BaseAppView {
+         this._eventBlocker.add_action(this._clickAction);
+ 
+         this._displayingPopup = false;
++        this._currentPopupDestroyId = 0;
+ 
+         this._availWidth = 0;
+         this._availHeight = 0;
+@@ -589,7 +590,22 @@ var AllView = class AllView extends BaseAppView {
+         this._stack.add_actor(popup.actor);
+         popup.connect('open-state-changed', (popup, isOpen) => {
+             this._eventBlocker.reactive = isOpen;
+-            this._currentPopup = isOpen ? popup : null;
++
++            if (this._currentPopup) {
++                this._currentPopup.actor.disconnect(this._currentPopupDestroyId);
++                this._currentPopupDestroyId = 0;
++            }
++
++            this._currentPopup = null;
++
++            if (isOpen) {
++                this._currentPopup = popup;
++                this._currentPopupDestroyId = popup.actor.connect('destroy', () => {
++                    this._currentPopup = null;
++                    this._currentPopupDestroyId = 0;
++                    this._eventBlocker.reactive = false;
++                });
++            }
+             this._updateIconOpacities(isOpen);
+             if(!isOpen)
+                 this._closeSpaceForPopup();
+-- 
+2.23.0
+
+
+From b7a3fd7fa4527ba9411dcd18debe6ccf88c34dc0 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Mon, 22 Jul 2019 10:57:57 -0400
+Subject: [PATCH 5/8] appDisplay: Add destroy handler for FolderIcon
+
+It is important that the FolderView of a FolderIcon always
+gets destroyed before the AppFolderPopup, since the view
+may or may not be in the popup, and the view should
+get cleaned up exactly once in either case.
+
+This commit adds a destroy handler on FolderIcon to ensure
+things get taken down in the right order, and to make sure
+the view isn't leaked if it's not yet part of the popup.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/appDisplay.js | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index dabf63bfd..5a8f4f1bf 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -1156,6 +1156,7 @@ var FolderIcon = class FolderIcon {
+             this.view.actor.vscroll.adjustment.value = 0;
+             this._openSpaceForPopup();
+         });
++        this.actor.connect('destroy', this.onDestroy.bind(this));
+         this.actor.connect('notify::mapped', () => {
+             if (!this.actor.mapped && this._popup)
+                 this._popup.popdown();
+@@ -1165,6 +1166,13 @@ var FolderIcon = class FolderIcon {
+         this._redisplay();
+     }
+ 
++    onDestroy() {
++        this.view.actor.destroy();
++
++        if (this._popup)
++            this._popup.actor.destroy();
++    }
++
+     getAppIds() {
+         return this.view.getAllItems().map(item => item.id);
+     }
+-- 
+2.23.0
+
+
+From a90d7a97d21ffa596747cc8ecd0e3f500cb8a77c Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Thu, 18 Jul 2019 14:49:30 -0400
+Subject: [PATCH 6/8] appDisplay: Stop watching FolderIcon parent view when
+ destroyed
+
+When a FolderIcon is opened, it asks the parent view to allocate
+space for it, which takes time.  Eventually, the space-ready
+signal is emitted on the view and the icon can make use of the new
+space with its popup.  If the icon gets destroyed in the
+interim, though, space-ready signal handler still fires.
+
+This commit disconnects the signal handler so it doesn't get called
+on a destroyed icon.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/appDisplay.js | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index 5a8f4f1bf..062ff222c 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -1169,6 +1169,11 @@ var FolderIcon = class FolderIcon {
+     onDestroy() {
+         this.view.actor.destroy();
+ 
++        if (this._spaceReadySignalId) {
++            this._parentView.disconnect(this._spaceReadySignalId);
++            this._spaceReadySignalId = 0;
++        }
++
+         if (this._popup)
+             this._popup.actor.destroy();
+     }
+@@ -1240,8 +1245,9 @@ var FolderIcon = class FolderIcon {
+     }
+ 
+     _openSpaceForPopup() {
+-        let id = this._parentView.connect('space-ready', () => {
+-            this._parentView.disconnect(id);
++        this._spaceReadySignalId = this._parentView.connect('space-ready', () => {
++            this._parentView.disconnect(this._spaceReadySignalId);
++            this._spaceReadySignalId = 0;
+             this._popup.popup();
+             this._updatePopupPosition();
+         });
+-- 
+2.23.0
+
+
+From b57ab33dadf0f31c5bf2c800806593e94784050c Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Thu, 18 Jul 2019 10:19:13 -0400
+Subject: [PATCH 7/8] appDisplay: Add open method to FolderIcon
+
+At the moment the only way to open a folder icon is to click on it;
+there's no API to open the icon programmatically.
+
+This commits adds an open method and makes the click handler use
+it.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/appDisplay.js | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index 062ff222c..c0c6e3663 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -1151,11 +1151,7 @@ var FolderIcon = class FolderIcon {
+ 
+         this.view = new FolderView();
+ 
+-        this.actor.connect('clicked', () => {
+-            this._ensurePopup();
+-            this.view.actor.vscroll.adjustment.value = 0;
+-            this._openSpaceForPopup();
+-        });
++        this.actor.connect('clicked', this.open.bind(this));
+         this.actor.connect('destroy', this.onDestroy.bind(this));
+         this.actor.connect('notify::mapped', () => {
+             if (!this.actor.mapped && this._popup)
+@@ -1178,6 +1174,12 @@ var FolderIcon = class FolderIcon {
+             this._popup.actor.destroy();
+     }
+ 
++    open() {
++        this._ensurePopup();
++        this.view.actor.vscroll.adjustment.value = 0;
++        this._openSpaceForPopup();
++    }
++
+     getAppIds() {
+         return this.view.getAllItems().map(item => item.id);
+     }
+-- 
+2.23.0
+
+
+From baacab7922a56957d041aa59944c419b82e7a7e1 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Thu, 18 Jul 2019 11:13:27 -0400
+Subject: [PATCH 8/8] appDisplay: Keep popup open on refresh
+
+If the list of applications is refreshed we currently close
+the open app folder.
+
+This commit adds logic to reopen the app folder on reload.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/628
+---
+ js/ui/appDisplay.js | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/js/ui/appDisplay.js b/js/ui/appDisplay.js
+index c0c6e3663..7fad02cd0 100644
+--- a/js/ui/appDisplay.js
++++ b/js/ui/appDisplay.js
+@@ -345,6 +345,21 @@ var AllView = class AllView extends BaseAppView {
+         super.removeAll();
+     }
+ 
++    _redisplay() {
++        let openFolderId = null;
++        if (this._displayingPopup && this._currentPopup)
++            openFolderId = this._currentPopup._source.id;
++
++        super._redisplay();
++
++        if (openFolderId) {
++            let [folderToReopen] = this.folderIcons.filter(folder => folder.id == openFolderId);
++
++            if (folderToReopen)
++                folderToReopen.open();
++        }
++    }
++
+     _itemNameChanged(item) {
+         // If an item's name changed, we can pluck it out of where it's
+         // supposed to be and reinsert it where it's sorted.
+-- 
+2.23.0
+

@@ -1,0 +1,87 @@
+From 1b6eb29ade832647510b36ddc13c9b88a25036df Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Wed, 11 Sep 2019 20:18:20 +0200
+Subject: [PATCH 1/4] extensionSystem: Handle added or removed sessionMode
+ extensions
+
+Right now we're only handling added sessionMode extensions correctly on
+sessionMode updates, also handle the other case and disable removed
+sessionMode extensions on sessionMode updates.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/96
+---
+ js/ui/extensionSystem.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 81804ea5e..77929f2a6 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -515,62 +515,62 @@ var ExtensionManager = class {
+         if (!this._initted) {
+             this._loadExtensions();
+             this._initted = true;
+         } else {
+             this._enabledExtensions.forEach(uuid => {
+                 this._callExtensionEnable(uuid);
+             });
+         }
+         this._enabled = true;
+     }
+ 
+     _disableAllExtensions() {
+         if (!this._enabled)
+             return;
+ 
+         if (this._initted) {
+             this._extensionOrder.slice().reverse().forEach(uuid => {
+                 this._callExtensionDisable(uuid);
+             });
+         }
+ 
+         this._enabled = false;
+     }
+ 
+     _sessionUpdated() {
+         // For now sessionMode.allowExtensions controls extensions from both the
+         // 'enabled-extensions' preference and the sessionMode.enabledExtensions
+         // property; it might make sense to make enabledExtensions independent
+         // from allowExtensions in the future
+         if (Main.sessionMode.allowExtensions) {
+-            if (this._initted)
+-                this._enabledExtensions = this._getEnabledExtensions();
++            // Take care of added or removed sessionMode extensions
++            this._onEnabledExtensionsChanged();
+             this._enableAllExtensions();
+         } else {
+             this._disableAllExtensions();
+         }
+     }
+ };
+ Signals.addSignalMethods(ExtensionManager.prototype);
+ 
+ class ExtensionUpdateSource extends MessageTray.Source {
+     constructor() {
+         const appSys = Shell.AppSystem.get_default();
+         this._app = appSys.lookup_app('gnome-shell-extension-prefs.desktop');
+ 
+         super(this._app.get_name());
+     }
+ 
+     getIcon() {
+         return this._app.app_info.get_icon();
+     }
+ 
+     _createPolicy() {
+         return new MessageTray.NotificationApplicationPolicy(this._app.id);
+     }
+ 
+     open() {
+         this._app.activate();
+         Main.overview.hide();
+         Main.panel.closeCalendar();
+     }
+ }
+-- 
+2.27.0
+

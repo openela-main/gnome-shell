@@ -1,0 +1,94 @@
+From 1bf28eea64056846547ec33d783c7f2e0dad78a4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 22 May 2020 22:53:39 +0200
+Subject: [PATCH] st/texture-cache: Cancel pending requests on icon-theme
+ changes
+
+As outlined in commit 36b8dcbe07, we can end up with wrong icons
+if the icon theme changes right after a GTK theme change to/from
+HighContrast triggered a theme reload.
+
+That's because when we reload icons for the new icon theme, there
+are already pending requests due to the icon-style change; those
+requests are simply re-used for the new icons, with the existing
+icon infos from the old theme.
+
+The above commit applied a simple work-around by changing the
+icon theme before the GTK theme, but that only works for the
+HighContrast switch in our own UI.
+
+It turns out that Settings also uses the "wrong" order, so the
+issue still reproduces with the Universal Access panel.
+
+So instead of relying on everything changing the settings in the
+order we expect, cancel all ongoing requests on icon-theme changes.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1277
+---
+ src/st/st-texture-cache.c | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/src/st/st-texture-cache.c b/src/st/st-texture-cache.c
+index 35e9d036f..6dc351282 100644
+--- a/src/st/st-texture-cache.c
++++ b/src/st/st-texture-cache.c
+@@ -48,6 +48,8 @@ struct _StTextureCachePrivate
+ 
+   /* File monitors to evict cache data on changes */
+   GHashTable *file_monitors; /* char * -> GFileMonitor * */
++
++  GCancellable *cancellable;
+ };
+ 
+ static void st_texture_cache_dispose (GObject *object);
+@@ -152,6 +154,9 @@ on_icon_theme_changed (StSettings     *settings,
+ {
+   g_autofree gchar *theme;
+ 
++  g_cancellable_cancel (cache->priv->cancellable);
++  g_cancellable_reset (cache->priv->cancellable);
++
+   st_texture_cache_evict_icons (cache);
+ 
+   g_object_get (settings, "gtk-icon-theme", &theme, NULL);
+@@ -186,6 +191,8 @@ st_texture_cache_init (StTextureCache *self)
+   self->priv->file_monitors = g_hash_table_new_full (g_file_hash, (GEqualFunc) g_file_equal,
+                                                      g_object_unref, g_object_unref);
+ 
++  self->priv->cancellable = g_cancellable_new ();
++
+   on_icon_theme_changed (settings, NULL, self);
+ }
+ 
+@@ -194,8 +201,11 @@ st_texture_cache_dispose (GObject *object)
+ {
+   StTextureCache *self = (StTextureCache*)object;
+ 
++  g_cancellable_cancel (self->priv->cancellable);
++
+   g_clear_object (&self->priv->settings);
+   g_clear_object (&self->priv->icon_theme);
++  g_clear_object (&self->priv->cancellable);
+ 
+   g_clear_pointer (&self->priv->keyed_cache, g_hash_table_destroy);
+   g_clear_pointer (&self->priv->keyed_surface_cache, g_hash_table_destroy);
+@@ -675,11 +685,14 @@ load_texture_async (StTextureCache       *cache,
+           gtk_icon_info_load_symbolic_async (data->icon_info,
+                                              &foreground_color, &success_color,
+                                              &warning_color, &error_color,
+-                                             NULL, on_symbolic_icon_loaded, data);
++                                             cache->priv->cancellable,
++                                             on_symbolic_icon_loaded, data);
+         }
+       else
+         {
+-          gtk_icon_info_load_icon_async (data->icon_info, NULL, on_icon_loaded, data);
++          gtk_icon_info_load_icon_async (data->icon_info,
++                                         cache->priv->cancellable,
++                                         on_icon_loaded, data);
+         }
+     }
+   else
+-- 
+2.26.2
+

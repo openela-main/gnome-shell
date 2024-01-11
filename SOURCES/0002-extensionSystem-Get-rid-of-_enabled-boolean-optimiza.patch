@@ -1,0 +1,237 @@
+From b70cf463e08bff43b242b851fc7c79244f54e76b Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Tue, 10 Aug 2021 13:25:57 -0400
+Subject: [PATCH 2/4] extensionSystem: Get rid of _enabled boolean optimization
+
+At the moment a session mode either allows extensions or it doesn't.
+If it allows extensions, then the entire available list of
+configured extensions get enabled as soon as the session mode is
+entered.
+
+Since enabling or disabling extensions is an all or nothing situation,
+the code tracks whether extensions are already enabled when entering
+the session mode, and if so, avoids iterating through the extension list
+needlessly. It does this using a boolean named _enabled.
+
+In the future, the extensions themselves will be given some say on
+whether or not they should be enabled in a given session mode. This
+means, the configured extension list may contain extensions that
+shouldn't be enabled for a given session mode, and the _enabled boolean
+will no longer be appropriated.
+
+This commit drops the _enabled boolean optimization.
+---
+ js/ui/extensionSystem.js | 13 -------------
+ 1 file changed, 13 deletions(-)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 77929f2a6..05630ed54 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -1,53 +1,52 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+ const { GLib, Gio, GObject, St } = imports.gi;
+ const Signals = imports.signals;
+ 
+ const ExtensionDownloader = imports.ui.extensionDownloader;
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const FileUtils = imports.misc.fileUtils;
+ const Main = imports.ui.main;
+ const MessageTray = imports.ui.messageTray;
+ 
+ const { ExtensionState, ExtensionType } = ExtensionUtils;
+ 
+ const ENABLED_EXTENSIONS_KEY = 'enabled-extensions';
+ const DISABLE_USER_EXTENSIONS_KEY = 'disable-user-extensions';
+ const EXTENSION_DISABLE_VERSION_CHECK_KEY = 'disable-extension-version-validation';
+ 
+ const UPDATE_CHECK_TIMEOUT = 24 * 60 * 60; // 1 day in seconds
+ 
+ var ExtensionManager = class {
+     constructor() {
+         this._initted = false;
+-        this._enabled = false;
+         this._updateNotified = false;
+ 
+         this._extensions = new Map();
+         this._enabledExtensions = [];
+         this._extensionOrder = [];
+ 
+         Main.sessionMode.connect('updated', this._sessionUpdated.bind(this));
+     }
+ 
+     init() {
+         this._installExtensionUpdates();
+         this._sessionUpdated();
+ 
+         GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UPDATE_CHECK_TIMEOUT, () => {
+             ExtensionDownloader.checkForUpdates();
+             return GLib.SOURCE_CONTINUE;
+         });
+         ExtensionDownloader.checkForUpdates();
+     }
+ 
+     lookup(uuid) {
+         return this._extensions.get(uuid);
+     }
+ 
+     getUuids() {
+         return [...this._extensions.keys()];
+     }
+ 
+     _callExtensionDisable(uuid) {
+         let extension = this.lookup(uuid);
+@@ -375,63 +374,60 @@ var ExtensionManager = class {
+         let hasError =
+             extension.state == ExtensionState.ERROR ||
+             extension.state == ExtensionState.OUT_OF_DATE;
+ 
+         let isMode = this._getModeExtensions().includes(extension.uuid);
+         let modeOnly = global.settings.get_boolean(DISABLE_USER_EXTENSIONS_KEY);
+ 
+         extension.canChange =
+             !hasError &&
+             global.settings.is_writable(ENABLED_EXTENSIONS_KEY) &&
+             (isMode || !modeOnly);
+     }
+ 
+     _getEnabledExtensions() {
+         let extensions = this._getModeExtensions();
+ 
+         if (global.settings.get_boolean(DISABLE_USER_EXTENSIONS_KEY))
+             return extensions;
+ 
+         return extensions.concat(global.settings.get_strv(ENABLED_EXTENSIONS_KEY));
+     }
+ 
+     _onUserExtensionsEnabledChanged() {
+         this._onEnabledExtensionsChanged();
+         this._onSettingsWritableChanged();
+     }
+ 
+     _onEnabledExtensionsChanged() {
+         let newEnabledExtensions = this._getEnabledExtensions();
+ 
+-        if (!this._enabled)
+-            return;
+-
+         // Find and enable all the newly enabled extensions: UUIDs found in the
+         // new setting, but not in the old one.
+         newEnabledExtensions.filter(
+             uuid => !this._enabledExtensions.includes(uuid)
+         ).forEach(uuid => {
+             this._callExtensionEnable(uuid);
+         });
+ 
+         // Find and disable all the newly disabled extensions: UUIDs found in the
+         // old setting, but not in the new one.
+         this._enabledExtensions.filter(
+             item => !newEnabledExtensions.includes(item)
+         ).forEach(uuid => {
+             this._callExtensionDisable(uuid);
+         });
+ 
+         this._enabledExtensions = newEnabledExtensions;
+     }
+ 
+     _onSettingsWritableChanged() {
+         for (let extension of this._extensions.values()) {
+             this._updateCanChange(extension);
+             this.emit('extension-state-changed', extension);
+         }
+     }
+ 
+     _onVersionValidationChanged() {
+         // we want to reload all extensions, but only enable
+         // extensions when allowed by the sessionMode, so
+         // temporarily disable them all
+@@ -482,85 +478,76 @@ var ExtensionManager = class {
+ 
+         this._enabledExtensions = this._getEnabledExtensions();
+ 
+         let perUserDir = Gio.File.new_for_path(global.userdatadir);
+         FileUtils.collectFromDatadirs('extensions', true, (dir, info) => {
+             let fileType = info.get_file_type();
+             if (fileType != Gio.FileType.DIRECTORY)
+                 return;
+             let uuid = info.get_name();
+             let existing = this.lookup(uuid);
+             if (existing) {
+                 log(`Extension ${uuid} already installed in ${existing.path}. ${dir.get_path()} will not be loaded`);
+                 return;
+             }
+ 
+             let extension;
+             let type = dir.has_prefix(perUserDir)
+                 ? ExtensionType.PER_USER
+                 : ExtensionType.SYSTEM;
+             try {
+                 extension = this.createExtensionObject(uuid, dir, type);
+             } catch (e) {
+                 logError(e, `Could not load extension ${uuid}`);
+                 return;
+             }
+             this.loadExtension(extension);
+         });
+     }
+ 
+     _enableAllExtensions() {
+-        if (this._enabled)
+-            return;
+-
+         if (!this._initted) {
+             this._loadExtensions();
+             this._initted = true;
+         } else {
+             this._enabledExtensions.forEach(uuid => {
+                 this._callExtensionEnable(uuid);
+             });
+         }
+-        this._enabled = true;
+     }
+ 
+     _disableAllExtensions() {
+-        if (!this._enabled)
+-            return;
+-
+         if (this._initted) {
+             this._extensionOrder.slice().reverse().forEach(uuid => {
+                 this._callExtensionDisable(uuid);
+             });
+         }
+-
+-        this._enabled = false;
+     }
+ 
+     _sessionUpdated() {
+         // For now sessionMode.allowExtensions controls extensions from both the
+         // 'enabled-extensions' preference and the sessionMode.enabledExtensions
+         // property; it might make sense to make enabledExtensions independent
+         // from allowExtensions in the future
+         if (Main.sessionMode.allowExtensions) {
+             // Take care of added or removed sessionMode extensions
+             this._onEnabledExtensionsChanged();
+             this._enableAllExtensions();
+         } else {
+             this._disableAllExtensions();
+         }
+     }
+ };
+ Signals.addSignalMethods(ExtensionManager.prototype);
+ 
+ class ExtensionUpdateSource extends MessageTray.Source {
+     constructor() {
+         const appSys = Shell.AppSystem.get_default();
+         this._app = appSys.lookup_app('gnome-shell-extension-prefs.desktop');
+ 
+         super(this._app.get_name());
+     }
+ 
+     getIcon() {
+         return this._app.app_info.get_icon();
+     }
+ 
+-- 
+2.27.0
+

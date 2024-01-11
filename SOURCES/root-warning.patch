@@ -1,0 +1,71 @@
+From 45ddeeaa317fb0ffd045600d9e4b95143c9ca8b8 Mon Sep 17 00:00:00 2001
+From: Matthias Clasen <mclasen@redhat.com>
+Date: Sat, 8 Jun 2013 13:32:35 -0400
+Subject: [PATCH 1/2] main: Show a warning when running as root
+
+gnome-session used to show a dialog in this case, but a
+notification is more natural nowadays. Doing it in gnome-shell
+avoids complicated synchronization between gnome-session and
+gnome-shell.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=701212
+---
+ js/ui/main.js | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/js/ui/main.js b/js/ui/main.js
+index 8d1755cf1..abf8a8765 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -237,6 +237,12 @@ function _initializeUI() {
+                                         ['MESSAGE_ID=' + GNOMESHELL_STARTED_MESSAGE_ID]);
+         }
+ 
++        let credentials = new Gio.Credentials();
++        if (credentials.get_unix_user() === 0) {
++            notify(_('Logged in as a privileged user'),
++                   _('Running a session as a privileged user should be avoided for security reasons. If possible, you should log in as a normal user.'));
++        }
++
+         let perfModuleName = GLib.getenv("SHELL_PERF_MODULE");
+         if (perfModuleName) {
+             let perfOutput = GLib.getenv("SHELL_PERF_OUTPUT");
+-- 
+2.23.0
+
+
+From 8e82907909b6a2e5af5da3f93b087df4b7eb48b5 Mon Sep 17 00:00:00 2001
+From: Matthias Clasen <mclasen@redhat.com>
+Date: Sat, 8 Jun 2013 13:33:58 -0400
+Subject: [PATCH 2/2] main: Show a warning when gdm is missing
+
+If we are not running under gdm, some functionaliy (such as
+the lock screen) does not work, and we should inform the
+user about this.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=701212
+---
+ js/ui/main.js | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/js/ui/main.js b/js/ui/main.js
+index abf8a8765..be49c750e 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -243,6 +243,13 @@ function _initializeUI() {
+                    _('Running a session as a privileged user should be avoided for security reasons. If possible, you should log in as a normal user.'));
+         }
+ 
++        if (sessionMode.currentMode !== 'gdm' &&
++            sessionMode.currentMode !== 'initial-setup' &&
++            screenShield === null) {
++            notify(_('Screen Lock disabled'),
++                   _('Screen Locking requires the GNOME display manager.'));
++        }
++
+         let perfModuleName = GLib.getenv("SHELL_PERF_MODULE");
+         if (perfModuleName) {
+             let perfOutput = GLib.getenv("SHELL_PERF_OUTPUT");
+-- 
+2.23.0
+

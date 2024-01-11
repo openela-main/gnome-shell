@@ -1,0 +1,29 @@
+From 165fc5147cd2c9bf4bc10a1c5a9a940ec4ddd8d9 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Tue, 15 Jan 2019 12:51:16 -0500
+Subject: [PATCH 1/4] background: refresh after suspend on wayland
+
+At the moment we only refresh after suspend on Xorg.
+
+We need to do it on wayland, too.
+---
+ src/shell-util.c | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/src/shell-util.c b/src/shell-util.c
+index 31bb18e70..c6e5abed6 100644
+--- a/src/shell-util.c
++++ b/src/shell-util.c
+@@ -395,9 +395,6 @@ get_gl_vendor (void)
+ gboolean
+ shell_util_need_background_refresh (void)
+ {
+-  if (!clutter_check_windowing_backend (CLUTTER_WINDOWING_X11))
+-    return FALSE;
+-
+   if (g_strcmp0 (get_gl_vendor (), "NVIDIA Corporation") == 0)
+     return TRUE;
+ 
+-- 
+2.21.0
+

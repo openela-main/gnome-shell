@@ -1,0 +1,80 @@
+From 2bb826291c420dd1b601758c7a686ac48e1086a6 Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Mon, 16 Dec 2019 12:39:49 +0100
+Subject: [PATCH] padOsd: Re-query action labels after mode switches
+
+Do this so the pad OSD is able to update dynamically to mode changes,
+showing immediately the new actions for the current mode(s).
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/898
+---
+ js/ui/padOsd.js | 31 ++++++++++++++++++++++++++++---
+ 1 file changed, 28 insertions(+), 3 deletions(-)
+
+diff --git a/js/ui/padOsd.js b/js/ui/padOsd.js
+index a4af47297..b4b3fe453 100644
+--- a/js/ui/padOsd.js
++++ b/js/ui/padOsd.js
+@@ -555,6 +555,14 @@ var PadDiagram = GObject.registerClass({
+         this.add_actor(label);
+     }
+ 
++    updateLabels(callback) {
++        for (let i = 0; i < this._labels.length; i++) {
++            let [label, action, idx, dir] = this._labels[i];
++            let str = callback(action, idx, dir);
++            label.set_text(str);
++        }
++    }
++
+     _applyLabel(label, action, idx, dir, str) {
+         if (str != null) {
+             label.set_text(str);
+@@ -758,17 +766,29 @@ var PadOsd = class {
+         global.display.request_pad_osd(pad, editionMode);
+     }
+ 
+-    _createLabel(type, number, dir) {
++    _getActionText(type, number) {
+         let str = global.display.get_pad_action_label(this.padDevice, type, number);
+-        let label = new St.Label({ text: str ? str : _("None") });
++        return str ? str : _("None");
++    }
++
++    _createLabel(type, number, dir) {
++        let label = new St.Label({ text: this._getActionText(type, number) });
+         this._padDiagram.addLabel(label, type, number, dir);
+     }
+ 
++    _updateActionLabels() {
++        this._padDiagram.updateLabels(this._getActionText.bind(this));
++    }
++
+     _onCapturedEvent(actor, event) {
++        let isModeSwitch =
++            (event.type() == Clutter.EventType.PAD_BUTTON_PRESS ||
++             event.type() == Clutter.EventType.PAD_BUTTON_RELEASE) &&
++            this.padDevice.get_mode_switch_button_group(event.get_button()) >= 0;
++
+         if (event.type() == Clutter.EventType.PAD_BUTTON_PRESS &&
+             event.get_source_device() == this.padDevice) {
+             this._padDiagram.activateButton(event.get_button());
+-            let isModeSwitch = this.padDevice.get_mode_switch_button_group(event.get_button()) >= 0;
+ 
+             /* Buttons that switch between modes cannot be edited */
+             if (this._editionMode && !isModeSwitch)
+@@ -777,6 +797,11 @@ var PadOsd = class {
+         } else if (event.type() == Clutter.EventType.PAD_BUTTON_RELEASE &&
+                    event.get_source_device() == this.padDevice) {
+             this._padDiagram.deactivateButton(event.get_button());
++
++            if (isModeSwitch) {
++                this._endActionEdition();
++                this._updateActionLabels();
++            }
+             return Clutter.EVENT_STOP;
+         } else if (event.type() == Clutter.EventType.KEY_PRESS &&
+                    (!this._editionMode || event.get_key_symbol() == Clutter.Escape)) {
+-- 
+2.24.0
+

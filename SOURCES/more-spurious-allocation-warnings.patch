@@ -1,0 +1,176 @@
+From 4926a9b8f958617d67d603622b1382c17fe4037c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Wed, 20 May 2020 12:05:04 +0200
+Subject: [PATCH 1/2] workspacesView: Avoid setting invalid geometries on views
+
+The fullGeometry and the actualGeometry of the WorkspacesDisplay are set
+from the allocation of the overviews ControlsManager and the
+WorkspacesDisplay, that means they're only valid after those actors got
+their allocations during Clutters allocation cycle.
+
+Since WorkspacesDisplay._updateWorkspacesViews() is already called while
+showing/mapping the WorkspacesDisplay, that allocation cycle didn't
+happen yet and we end up either setting the geometries of the views to
+null (in case of the fullGeometry) or to something wrong (a 0-sized
+allocation in case of the actualGeometry).
+
+So avoid setting invalid geometries on the views by initializing both
+the fullGeometry and the actualGeometry to null, and then only updating
+the geometries of the views after they're set to a correct value.
+
+Note that this means we won't correctly animate the overview the first
+time we open it since the animation depends on the geometries being set,
+but is being started from show(), which means no allocations have
+happened yet. In practice this introduces no regression though since
+before this change we simply used incorrect geometries (see the 0-sized
+allocation mentioned above) on the initial opening and the animation
+didn't work either.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1119
+---
+ js/ui/workspacesView.js | 28 +++++++++++++++++-----------
+ 1 file changed, 17 insertions(+), 11 deletions(-)
+
+diff --git a/js/ui/workspacesView.js b/js/ui/workspacesView.js
+index e302296a6..02baddc6e 100644
+--- a/js/ui/workspacesView.js
++++ b/js/ui/workspacesView.js
+@@ -521,6 +521,7 @@ var WorkspacesDisplay = class {
+         this._scrollEventId = 0;
+         this._keyPressEventId = 0;
+ 
++        this._actualGeometry = null;
+         this._fullGeometry = null;
+     }
+ 
+@@ -675,8 +676,10 @@ var WorkspacesDisplay = class {
+ 
+         this._workspacesViews.forEach(v => v.actor.show());
+ 
+-        this._updateWorkspacesFullGeometry();
+-        this._updateWorkspacesActualGeometry();
++        if (this._fullGeometry)
++            this._syncWorkspacesFullGeometry();
++        if (this._actualGeometry)
++            this._syncWorkspacesActualGeometry();
+     }
+ 
+     _scrollValueChanged() {
+@@ -739,10 +742,10 @@ var WorkspacesDisplay = class {
+     // the sliding controls were never slid in at all.
+     setWorkspacesFullGeometry(geom) {
+         this._fullGeometry = geom;
+-        this._updateWorkspacesFullGeometry();
++        this._syncWorkspacesFullGeometry();
+     }
+ 
+-    _updateWorkspacesFullGeometry() {
++    _syncWorkspacesFullGeometry() {
+         if (!this._workspacesViews.length)
+             return;
+ 
+@@ -754,18 +757,21 @@ var WorkspacesDisplay = class {
+     }
+ 
+     _updateWorkspacesActualGeometry() {
++        const [x, y] = this.actor.get_transformed_position();
++        const width = this.actor.allocation.get_width();
++        const height = this.actor.allocation.get_height();
++
++        this._actualGeometry = { x, y, width, height };
++        this._syncWorkspacesActualGeometry();
++    }
++
++    _syncWorkspacesActualGeometry() {
+         if (!this._workspacesViews.length)
+             return;
+ 
+-        let [x, y] = this.actor.get_transformed_position();
+-        let allocation = this.actor.allocation;
+-        let width = allocation.x2 - allocation.x1;
+-        let height = allocation.y2 - allocation.y1;
+-        let primaryGeometry = { x: x, y: y, width: width, height: height };
+-
+         let monitors = Main.layoutManager.monitors;
+         for (let i = 0; i < monitors.length; i++) {
+-            let geometry = (i == this._primaryIndex) ? primaryGeometry : monitors[i];
++            let geometry = i === this._primaryIndex ? this._actualGeometry : monitors[i];
+             this._workspacesViews[i].setActualGeometry(geometry);
+         }
+     }
+-- 
+2.26.2
+
+
+From 4671eebccf4e6afce8c0a869d63095b39aa7e163 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Wed, 20 May 2020 13:39:11 +0200
+Subject: [PATCH 2/2] workspacesView: Only animate on show() when geometries
+ are already set
+
+Animating the window clones of the overview requires the fullGeometry
+and the actualGeometry to be set, which they won't be when showing the
+overview for the first time. So don't even try to animate the window
+clones in that case because the geometries will still be null and
+accessing them in workspace.js will throw errors.
+
+The workspace views will still get the correct layout as soon as the
+allocations happen because syncing the geometries will trigger updating
+the window positions. Since animations are disabled for position changes
+when syncing the geometry though, we won't get an animation and the
+clones will jump into place. That's not a regression though since before
+this change we also didn't animate in that case because the geometries
+used were simply wrong (the actualGeometry was 0-sized as explained in
+the last commit).
+
+If we wanted to fix the initial animation of the overview, we'd have to
+always enable animations of the window clones when syncing geometries,
+but that would break the animation of the workspace when hovering the
+workspaceThumbnail slider, because right now those animations are "glued
+together" using the actualGeometry, so they would get out of sync.
+
+The reason there are no errors happening in workspace.js with the
+existing code is that due to a bug in Clutter the fullGeometry of
+WorkspacesDisplay gets set very early while mapping the WorkspacesViews
+(because the overviews ControlsManager gets an allocation during the
+resource scale calculation of a ClutterClone, see
+https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/1181), so it
+won't be set to null anymore when calling
+WorkspacesView.animateToOverview().
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1119
+---
+ js/ui/workspacesView.js | 17 ++++++++++-------
+ 1 file changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/js/ui/workspacesView.js b/js/ui/workspacesView.js
+index 02baddc6e..3e9d77655 100644
+--- a/js/ui/workspacesView.js
++++ b/js/ui/workspacesView.js
+@@ -589,13 +589,16 @@ var WorkspacesDisplay = class {
+ 
+     show(fadeOnPrimary) {
+         this._updateWorkspacesViews();
+-        for (let i = 0; i < this._workspacesViews.length; i++) {
+-            let animationType;
+-            if (fadeOnPrimary && i == this._primaryIndex)
+-                animationType = AnimationType.FADE;
+-            else
+-                animationType = AnimationType.ZOOM;
+-            this._workspacesViews[i].animateToOverview(animationType);
++
++        if (this._actualGeometry && this._fullGeometry) {
++            for (let i = 0; i < this._workspacesViews.length; i++) {
++                let animationType;
++                if (fadeOnPrimary && i == this._primaryIndex)
++                    animationType = AnimationType.FADE;
++                else
++                    animationType = AnimationType.ZOOM;
++                this._workspacesViews[i].animateToOverview(animationType);
++            }
+         }
+ 
+         this._restackedNotifyId =
+-- 
+2.26.2
+

@@ -1,0 +1,488 @@
+From 7b514e637837e00372e20fa52f841e993966b734 Mon Sep 17 00:00:00 2001
+From: Umang Jain <mailumangjain@gmail.com>
+Date: Fri, 13 Dec 2019 13:36:14 +0530
+Subject: [PATCH 1/7] shellEntry: Add CapsLockWarning class
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/619
+---
+ data/theme/gnome-shell-sass/_common.scss |  5 +++
+ js/ui/shellEntry.js                      | 39 +++++++++++++++++++++++-
+ 2 files changed, 43 insertions(+), 1 deletion(-)
+
+diff --git a/data/theme/gnome-shell-sass/_common.scss b/data/theme/gnome-shell-sass/_common.scss
+index b1eeb0ce97..19a736ab7d 100644
+--- a/data/theme/gnome-shell-sass/_common.scss
++++ b/data/theme/gnome-shell-sass/_common.scss
+@@ -391,6 +391,11 @@ StScrollBar {
+     padding-bottom: 8px;
+   }
+ 
++  .prompt-dialog-caps-lock-warning {
++    @extend .prompt-dialog-error-label;
++    padding-left: 6.2em;
++  }
++
+   .prompt-dialog-info-label {
+     font-size: 10pt;
+     padding-bottom: 8px;
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index 79f1aad3e7..c1738c4064 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -1,6 +1,6 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+-const { Clutter, Shell, St } = imports.gi;
++const { Clutter, GObject, Pango, Shell, St } = imports.gi;
+ 
+ const BoxPointer = imports.ui.boxpointer;
+ const Main = imports.ui.main;
+@@ -170,3 +170,40 @@ function addContextMenu(entry, params) {
+         entry._menuManager = null;
+     });
+ }
++
++var CapsLockWarning = GObject.registerClass(
++class CapsLockWarning extends St.Label {
++    _init(params) {
++        let defaultParams = { style_class: 'prompt-dialog-error-label' };
++        super._init(Object.assign(defaultParams, params));
++
++        this.text = _('Caps lock is on.');
++
++        this._keymap = Clutter.get_default_backend().get_keymap();
++
++        this.connect('notify::mapped', () => {
++            if (this.is_mapped()) {
++                this.stateChangedId = this._keymap.connect('state-changed',
++                    this._updateCapsLockWarningOpacity.bind(this));
++            } else {
++                this._keymap.disconnect(this.stateChangedId);
++                this.stateChangedId = 0;
++            }
++
++            this._updateCapsLockWarningOpacity();
++        });
++
++        this.connect('destroy', () => {
++            if (this.stateChangedId > 0)
++                this._keymap.disconnect(this.stateChangedId);
++        });
++
++        this.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
++        this.clutter_text.line_wrap = true;
++    }
++
++    _updateCapsLockWarningOpacity() {
++        let capsLockOn = this._keymap.get_caps_lock_state();
++        this.opacity = capsLockOn ? 255 : 0;
++    }
++});
+-- 
+2.21.1
+
+
+From aa4938f261454f85c782e59e40d4e5a9e1a01dbc Mon Sep 17 00:00:00 2001
+From: Umang Jain <mailumangjain@gmail.com>
+Date: Wed, 18 Dec 2019 01:33:45 +0530
+Subject: [PATCH 2/7] js: Add caps-lock Warning to the dialogs
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/619
+---
+ js/gdm/authPrompt.js             | 4 ++++
+ js/ui/components/keyring.js      | 6 ++++++
+ js/ui/components/networkAgent.js | 8 ++++++++
+ js/ui/components/polkitAgent.js  | 2 ++
+ js/ui/shellMountOperation.js     | 3 +++
+ 5 files changed, 23 insertions(+)
+
+diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
+index 71069e93b8..3ce9fd0d01 100644
+--- a/js/gdm/authPrompt.js
++++ b/js/gdm/authPrompt.js
+@@ -113,6 +113,9 @@ var AuthPrompt = class {
+ 
+         this._entry.grab_key_focus();
+ 
++        this._capsLockWarningLabel = new ShellEntry.CapsLockWarning();
++        this.actor.add_child(this._capsLockWarningLabel);
++
+         this._timedLoginIndicator = new St.Bin({ style_class: 'login-dialog-timed-login-indicator',
+                                                  scale_x: 0 });
+ 
+@@ -432,6 +435,7 @@ var AuthPrompt = class {
+     setPasswordChar(passwordChar) {
+         this._entry.clutter_text.set_password_char(passwordChar);
+         this._entry.menu.isPassword = passwordChar != '';
++        this._capsLockWarningLabel.visible = passwordChar !== '';
+     }
+ 
+     setQuestion(question) {
+diff --git a/js/ui/components/keyring.js b/js/ui/components/keyring.js
+index 0d9f1e4663..3512fb63b1 100644
+--- a/js/ui/components/keyring.js
++++ b/js/ui/components/keyring.js
+@@ -128,6 +128,12 @@ var KeyringDialog = class extends ModalDialog.ModalDialog {
+         this.prompt.set_password_actor(this._passwordEntry ? this._passwordEntry.clutter_text : null);
+         this.prompt.set_confirm_actor(this._confirmEntry ? this._confirmEntry.clutter_text : null);
+ 
++        if (this._passwordEntry || this._confirmEntry) {
++            this._capsLockWarningLabel = new ShellEntry.CapsLockWarning();
++            layout.attach(this._capsLockWarningLabel, 1, row, 1, 1);
++            row++;
++        }
++
+         if (this.prompt.choice_visible) {
+             let choice = new CheckBox.CheckBox();
+             this.prompt.bind_property('choice-label', choice.getLabelActor(), 'text', GObject.BindingFlags.SYNC_CREATE);
+diff --git a/js/ui/components/networkAgent.js b/js/ui/components/networkAgent.js
+index f871c732d9..32d40fb2b9 100644
+--- a/js/ui/components/networkAgent.js
++++ b/js/ui/components/networkAgent.js
+@@ -95,6 +95,14 @@ var NetworkSecretDialog = class extends ModalDialog.ModalDialog {
+                 secret.entry.clutter_text.set_password_char('\u25cf');
+         }
+ 
++        if (this._content.secrets.some(s => s.password)) {
++            this._capsLockWarningLabel = new ShellEntry.CapsLockWarning();
++            if (rtl)
++                layout.attach(this._capsLockWarningLabel, 0, pos, 1, 1);
++            else
++                layout.attach(this._capsLockWarningLabel, 1, pos, 1, 1);
++        }
++
+         contentBox.messageBox.add(secretTable);
+ 
+         if (flags & NM.SecretAgentGetSecretsFlags.WPS_PBC_ACTIVE) {
+diff --git a/js/ui/components/polkitAgent.js b/js/ui/components/polkitAgent.js
+index 21feb40903..734a217335 100644
+--- a/js/ui/components/polkitAgent.js
++++ b/js/ui/components/polkitAgent.js
+@@ -108,6 +108,8 @@ var AuthenticationDialog = class extends ModalDialog.ModalDialog {
+ 
+         this.setInitialKeyFocus(this._passwordEntry);
+         this._passwordBox.hide();
++        this._capsLockWarningLabel = new ShellEntry.CapsLockWarning({ style_class: 'prompt-dialog-caps-lock-warning' });
++        content.messageBox.add(this._capsLockWarningLabel);
+ 
+         this._errorMessageLabel = new St.Label({ style_class: 'prompt-dialog-error-label' });
+         this._errorMessageLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+diff --git a/js/ui/shellMountOperation.js b/js/ui/shellMountOperation.js
+index f976f400f4..3a2377ddaf 100644
+--- a/js/ui/shellMountOperation.js
++++ b/js/ui/shellMountOperation.js
+@@ -305,6 +305,9 @@ var ShellMountPasswordDialog = class extends ModalDialog.ModalDialog {
+         this._passwordBox.add(this._passwordEntry, {expand: true });
+         this.setInitialKeyFocus(this._passwordEntry);
+ 
++        this._capsLockWarningLabel = new ShellEntry.CapsLockWarning();
++        content.messageBox.add(this._capsLockWarningLabel);
++
+         this._errorMessageLabel = new St.Label({ style_class: 'prompt-dialog-error-label',
+                                                  text: _("Sorry, that didn’t work. Please try again.") });
+         this._errorMessageLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+-- 
+2.21.1
+
+
+From 016cbd971711665844d40ec678d2779c160f791b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Thu, 23 Jan 2020 22:37:06 +0100
+Subject: [PATCH 3/7] shellEntry: Make signal id variable private
+
+Signal connection IDs should be private variables, so make this one
+private.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/952
+---
+ js/ui/shellEntry.js | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index c1738c4064..cd7c9a6c88 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -183,19 +183,19 @@ class CapsLockWarning extends St.Label {
+ 
+         this.connect('notify::mapped', () => {
+             if (this.is_mapped()) {
+-                this.stateChangedId = this._keymap.connect('state-changed',
++                this._stateChangedId = this._keymap.connect('state-changed',
+                     this._updateCapsLockWarningOpacity.bind(this));
+             } else {
+-                this._keymap.disconnect(this.stateChangedId);
+-                this.stateChangedId = 0;
++                this._keymap.disconnect(this._stateChangedId);
++                this._stateChangedId = 0;
+             }
+ 
+             this._updateCapsLockWarningOpacity();
+         });
+ 
+         this.connect('destroy', () => {
+-            if (this.stateChangedId > 0)
+-                this._keymap.disconnect(this.stateChangedId);
++            if (this._stateChangedId > 0)
++                this._keymap.disconnect(this._stateChangedId);
+         });
+ 
+         this.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+-- 
+2.21.1
+
+
+From ba65f9066d72731e345a5aced61f35d39c1c1376 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Thu, 23 Jan 2020 23:26:45 +0100
+Subject: [PATCH 4/7] theme: Move caps-lock warning to entry widget stylesheet
+
+The caps-lock warning is more related to entries than dialogs and is
+also used in gdm, which is not realated to dialogs at all. Rename the
+css class to caps-lock-warning-label and move it to the entry
+stylesheet.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/952
+---
+ data/theme/gnome-shell-sass/_common.scss | 12 +++++++-----
+ js/ui/shellEntry.js                      |  2 +-
+ 2 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/data/theme/gnome-shell-sass/_common.scss b/data/theme/gnome-shell-sass/_common.scss
+index 19a736ab7d..4661533de2 100644
+--- a/data/theme/gnome-shell-sass/_common.scss
++++ b/data/theme/gnome-shell-sass/_common.scss
+@@ -94,6 +94,13 @@ StEntry {
+   }
+ }
+ 
++.caps-lock-warning-label {
++  padding-left: 6.2em;
++  @include fontsize($font-size - 1);
++  color: $warning_color;
++}
++
++
+ 
+ /* Scrollbars */
+ 
+@@ -391,11 +398,6 @@ StScrollBar {
+     padding-bottom: 8px;
+   }
+ 
+-  .prompt-dialog-caps-lock-warning {
+-    @extend .prompt-dialog-error-label;
+-    padding-left: 6.2em;
+-  }
+-
+   .prompt-dialog-info-label {
+     font-size: 10pt;
+     padding-bottom: 8px;
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index cd7c9a6c88..46eba88d54 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -174,7 +174,7 @@ function addContextMenu(entry, params) {
+ var CapsLockWarning = GObject.registerClass(
+ class CapsLockWarning extends St.Label {
+     _init(params) {
+-        let defaultParams = { style_class: 'prompt-dialog-error-label' };
++        let defaultParams = { style_class: 'caps-lock-warning-label' };
+         super._init(Object.assign(defaultParams, params));
+ 
+         this.text = _('Caps lock is on.');
+-- 
+2.21.1
+
+
+From afd764c82febe21aec70bdfc19d256f3401530e1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Thu, 23 Jan 2020 22:36:09 +0100
+Subject: [PATCH 5/7] shellEntry: Hide caps lock warning and use animation to
+ show it
+
+Since the caps-lock warning adds a lot of spacing to dialogs and the
+lock screen, hide it by default and only show it when necessary. To make
+the transition smooth instead of just showing the label, animate it in
+using the height and opacity.
+
+Also add some bottom padding to the label so we can show or hide that
+padding, too.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/952
+---
+ data/theme/gnome-shell-sass/_common.scss |  1 +
+ js/ui/shellEntry.js                      | 33 ++++++++++++++++++------
+ 2 files changed, 26 insertions(+), 8 deletions(-)
+
+diff --git a/data/theme/gnome-shell-sass/_common.scss b/data/theme/gnome-shell-sass/_common.scss
+index 4661533de2..9e0751c8c5 100644
+--- a/data/theme/gnome-shell-sass/_common.scss
++++ b/data/theme/gnome-shell-sass/_common.scss
+@@ -95,6 +95,7 @@ StEntry {
+ }
+ 
+ .caps-lock-warning-label {
++  padding-bottom: 8px;
+   padding-left: 6.2em;
+   @include fontsize($font-size - 1);
+   color: $warning_color;
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index 46eba88d54..fc8ee37a9a 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -6,6 +6,7 @@ const BoxPointer = imports.ui.boxpointer;
+ const Main = imports.ui.main;
+ const Params = imports.misc.params;
+ const PopupMenu = imports.ui.popupMenu;
++const Tweener = imports.ui.tweener;
+ 
+ var EntryMenu = class extends PopupMenu.PopupMenu {
+     constructor(entry) {
+@@ -179,31 +180,47 @@ class CapsLockWarning extends St.Label {
+ 
+         this.text = _('Caps lock is on.');
+ 
++        this.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
++        this.clutter_text.line_wrap = true;
++
+         this._keymap = Clutter.get_default_backend().get_keymap();
+ 
+         this.connect('notify::mapped', () => {
+             if (this.is_mapped()) {
+                 this._stateChangedId = this._keymap.connect('state-changed',
+-                    this._updateCapsLockWarningOpacity.bind(this));
++                    () => this._sync(true));
+             } else {
+                 this._keymap.disconnect(this._stateChangedId);
+                 this._stateChangedId = 0;
+             }
+ 
+-            this._updateCapsLockWarningOpacity();
++            this._sync(false);
+         });
+ 
+         this.connect('destroy', () => {
+-            if (this._stateChangedId > 0)
++            if (this._stateChangedId)
+                 this._keymap.disconnect(this._stateChangedId);
+         });
+-
+-        this.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+-        this.clutter_text.line_wrap = true;
+     }
+ 
+-    _updateCapsLockWarningOpacity() {
++    _sync(animate) {
+         let capsLockOn = this._keymap.get_caps_lock_state();
+-        this.opacity = capsLockOn ? 255 : 0;
++
++        Tweener.removeTweens(this);
++
++        this.natural_height_set = false;
++        let [, height] = this.get_preferred_height(-1);
++        this.natural_height_set = true;
++
++        Tweener.addTween(this, {
++            height: capsLockOn ? height : 0,
++            opacity: capsLockOn ? 255 : 0,
++            time: animate ? 0.2 : 0,
++            transition: 'easeOutQuad',
++            onComplete: () => {
++                if (capsLockOn)
++                    this.height = -1;
++            },
++        });
+     }
+ });
+-- 
+2.21.1
+
+
+From 1ef3dafb51da380c54635d0565dc098e40bbb3e1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 29 Jan 2020 17:48:57 +0100
+Subject: [PATCH 6/7] js: Initialize some properties
+
+Otherwise those can result in the (harmless) "reference to undefined
+property" warnings.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/970
+---
+ js/ui/overview.js   | 1 +
+ js/ui/shellEntry.js | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/js/ui/overview.js b/js/ui/overview.js
+index dc6ad1821b..5bad4cbd62 100644
+--- a/js/ui/overview.js
++++ b/js/ui/overview.js
+@@ -80,6 +80,7 @@ var Overview = class {
+     constructor() {
+         this._overviewCreated = false;
+         this._initCalled = false;
++        this._visible = false;
+ 
+         Main.sessionMode.connect('updated', this._sessionUpdated.bind(this));
+         this._sessionUpdated();
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index fc8ee37a9a..55267e7c87 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -184,6 +184,7 @@ class CapsLockWarning extends St.Label {
+         this.clutter_text.line_wrap = true;
+ 
+         this._keymap = Clutter.get_default_backend().get_keymap();
++        this._stateChangedId = 0;
+ 
+         this.connect('notify::mapped', () => {
+             if (this.is_mapped()) {
+-- 
+2.21.1
+
+
+From 273f7adb43cfee907342d017e1454ea90d42d262 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 21 Feb 2020 19:38:53 +0100
+Subject: [PATCH 7/7] shellEntry: Restore natural-height-set instead of forcing
+ it
+
+If we are transitioning the label from 0 to its natural height, we
+must set natural-height-set again after querying the preferred height,
+otherwise Clutter would skip the transition.
+
+However when transitioning in the opposite direction, setting the
+property to true can go horribly wrong:
+If the actor hasn't been allocated before, it will store a fixed
+natural height of 0. But as there is no fixed min-height, we can
+end up with min-height > natural-height, which is a fatal error.
+
+(This isn't an issue when *actually* setting a fixed height, as
+that will set both natural and minimum height)
+
+So instead of always setting natural-height-set to true, restore
+its previous value to fix the issue.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/2255
+---
+ js/ui/shellEntry.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/shellEntry.js b/js/ui/shellEntry.js
+index 55267e7c87..4a30b22f7a 100644
+--- a/js/ui/shellEntry.js
++++ b/js/ui/shellEntry.js
+@@ -209,9 +209,10 @@ class CapsLockWarning extends St.Label {
+ 
+         Tweener.removeTweens(this);
+ 
++        const naturalHeightSet = this.natural_height_set;
+         this.natural_height_set = false;
+         let [, height] = this.get_preferred_height(-1);
+-        this.natural_height_set = true;
++        this.natural_height_set = naturalHeightSet;
+ 
+         Tweener.addTween(this, {
+             height: capsLockOn ? height : 0,
+-- 
+2.21.1
+

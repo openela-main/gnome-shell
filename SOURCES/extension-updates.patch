@@ -1,0 +1,3810 @@
+From ab3a275e20c36cc21e529bb2c4328ea36024ecba Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Sat, 6 Jul 2019 15:31:57 +0200
+Subject: [PATCH 01/26] extensionUtils: Move ExtensionState definition here
+
+It makes sense to keep extension-related enums in the same module instead
+of spreading them between ExtensionSystem and ExtensionUtils.
+
+More importantly, this will make the type available to the extensions-prefs
+tool (which runs in a different process and therefore only has access to
+a limited set of modules).
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/misc/extensionUtils.js | 13 +++++++++++++
+ js/ui/extensionSystem.js  | 13 +------------
+ js/ui/lookingGlass.js     | 14 ++++++++------
+ 3 files changed, 22 insertions(+), 18 deletions(-)
+
+diff --git a/js/misc/extensionUtils.js b/js/misc/extensionUtils.js
+index fb1e2b506..dc6e74cf8 100644
+--- a/js/misc/extensionUtils.js
++++ b/js/misc/extensionUtils.js
+@@ -17,6 +17,19 @@ var ExtensionType = {
+     SESSION_MODE: 3
+ };
+ 
++var ExtensionState = {
++    ENABLED: 1,
++    DISABLED: 2,
++    ERROR: 3,
++    OUT_OF_DATE: 4,
++    DOWNLOADING: 5,
++    INITIALIZED: 6,
++
++    // Used as an error state for operations on unknown extensions,
++    // should never be in a real extensionMeta object.
++    UNINSTALLED: 99
++};
++
+ // Maps uuid -> metadata object
+ var extensions = {};
+ 
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 9ffdb4f3d..3091af2ba 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -6,18 +6,7 @@ const Signals = imports.signals;
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const Main = imports.ui.main;
+ 
+-var ExtensionState = {
+-    ENABLED: 1,
+-    DISABLED: 2,
+-    ERROR: 3,
+-    OUT_OF_DATE: 4,
+-    DOWNLOADING: 5,
+-    INITIALIZED: 6,
+-
+-    // Used as an error state for operations on unknown extensions,
+-    // should never be in a real extensionMeta object.
+-    UNINSTALLED: 99
+-};
++const { ExtensionState } = ExtensionUtils;
+ 
+ // Arrays of uuids
+ var enabledExtensions;
+diff --git a/js/ui/lookingGlass.js b/js/ui/lookingGlass.js
+index 958211df0..fefb3f731 100644
+--- a/js/ui/lookingGlass.js
++++ b/js/ui/lookingGlass.js
+@@ -14,6 +14,8 @@ const Tweener = imports.ui.tweener;
+ const Main = imports.ui.main;
+ const JsParse = imports.misc.jsParse;
+ 
++const { ExtensionState } = ExtensionUtils;
++
+ const CHEVRON = '>>> ';
+ 
+ /* Imports...feel free to add here as needed */
+@@ -684,16 +686,16 @@ var Extensions = class Extensions {
+ 
+     _stateToString(extensionState) {
+         switch (extensionState) {
+-            case ExtensionSystem.ExtensionState.ENABLED:
++            case ExtensionState.ENABLED:
+                 return _("Enabled");
+-            case ExtensionSystem.ExtensionState.DISABLED:
+-            case ExtensionSystem.ExtensionState.INITIALIZED:
++            case ExtensionState.DISABLED:
++            case ExtensionState.INITIALIZED:
+                 return _("Disabled");
+-            case ExtensionSystem.ExtensionState.ERROR:
++            case ExtensionState.ERROR:
+                 return _("Error");
+-            case ExtensionSystem.ExtensionState.OUT_OF_DATE:
++            case ExtensionState.OUT_OF_DATE:
+                 return _("Out of date");
+-            case ExtensionSystem.ExtensionState.DOWNLOADING:
++            case ExtensionState.DOWNLOADING:
+                 return _("Downloading");
+         }
+         return 'Unknown'; // Not translated, shouldn't appear
+-- 
+2.29.2
+
+
+From c16d1589d093dac4e0efe21c7f1aeb635afabd0f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 7 Mar 2019 01:45:45 +0100
+Subject: [PATCH 02/26] extensionSystem: Turn into a class
+
+The extension system started out as a set of simple functions, but
+gained more state later, and even some hacks to emit signals without
+having an object to emit them on.
+
+There is no good reason for that weirdness, so rather than imitating an
+object, wrap the existing system into a real ExtensionManager object.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/ui/extensionDownloader.js |  17 +-
+ js/ui/extensionSystem.js     | 569 +++++++++++++++++------------------
+ js/ui/lookingGlass.js        |   5 +-
+ js/ui/main.js                |   3 +-
+ js/ui/shellDBus.js           |   7 +-
+ 5 files changed, 297 insertions(+), 304 deletions(-)
+
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index 9aed29c69..fe37463f2 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -6,6 +6,7 @@ const Config = imports.misc.config;
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const ExtensionSystem = imports.ui.extensionSystem;
+ const FileUtils = imports.misc.fileUtils;
++const Main = imports.ui.main;
+ const ModalDialog = imports.ui.modalDialog;
+ 
+ const _signals = ExtensionSystem._signals;
+@@ -25,7 +26,7 @@ function installExtension(uuid, invocation) {
+ 
+     _httpSession.queue_message(message, (session, message) => {
+         if (message.status_code != Soup.KnownStatusCode.OK) {
+-            ExtensionSystem.logExtensionError(uuid, 'downloading info: ' + message.status_code);
++            Main.extensionManager.logExtensionError(uuid, 'downloading info: ' + message.status_code);
+             invocation.return_dbus_error('org.gnome.Shell.DownloadInfoError', message.status_code.toString());
+             return;
+         }
+@@ -34,7 +35,7 @@ function installExtension(uuid, invocation) {
+         try {
+             info = JSON.parse(message.response_body.data);
+         } catch (e) {
+-            ExtensionSystem.logExtensionError(uuid, 'parsing info: ' + e);
++            Main.extensionManager.logExtensionError(uuid, 'parsing info: ' + e);
+             invocation.return_dbus_error('org.gnome.Shell.ParseInfoError', e.toString());
+             return;
+         }
+@@ -53,7 +54,7 @@ function uninstallExtension(uuid) {
+     if (extension.type != ExtensionUtils.ExtensionType.PER_USER)
+         return false;
+ 
+-    if (!ExtensionSystem.unloadExtension(extension))
++    if (!Main.extensionManager.unloadExtension(extension))
+         return false;
+ 
+     FileUtils.recursivelyDeleteDir(extension.dir, true);
+@@ -117,7 +118,7 @@ function updateExtension(uuid) {
+             let oldExtension = ExtensionUtils.extensions[uuid];
+             let extensionDir = oldExtension.dir;
+ 
+-            if (!ExtensionSystem.unloadExtension(oldExtension))
++            if (!Main.extensionManager.unloadExtension(oldExtension))
+                 return;
+ 
+             FileUtils.recursivelyMoveDir(extensionDir, oldExtensionTmpDir);
+@@ -127,10 +128,10 @@ function updateExtension(uuid) {
+ 
+             try {
+                 extension = ExtensionUtils.createExtensionObject(uuid, extensionDir, ExtensionUtils.ExtensionType.PER_USER);
+-                ExtensionSystem.loadExtension(extension);
++                Main.extensionManager.loadExtension(extension);
+             } catch(e) {
+                 if (extension)
+-                    ExtensionSystem.unloadExtension(extension);
++                    Main.extensionManager.unloadExtension(extension);
+ 
+                 logError(e, 'Error loading extension %s'.format(uuid));
+ 
+@@ -139,7 +140,7 @@ function updateExtension(uuid) {
+ 
+                 // Restore what was there before. We can't do much if we
+                 // fail here.
+-                ExtensionSystem.loadExtension(oldExtension);
++                Main.extensionManager.loadExtension(oldExtension);
+                 return;
+             }
+ 
+@@ -239,7 +240,7 @@ class InstallExtensionDialog extends ModalDialog.ModalDialog {
+ 
+             try {
+                 let extension = ExtensionUtils.createExtensionObject(uuid, dir, ExtensionUtils.ExtensionType.PER_USER);
+-                ExtensionSystem.loadExtension(extension);
++                Main.extensionManager.loadExtension(extension);
+             } catch(e) {
+                 uninstallExtension(uuid);
+                 errback('LoadExtensionError', e);
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 3091af2ba..b7e908223 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -8,358 +8,351 @@ const Main = imports.ui.main;
+ 
+ const { ExtensionState } = ExtensionUtils;
+ 
+-// Arrays of uuids
+-var enabledExtensions;
+-// Contains the order that extensions were enabled in.
+-var extensionOrder = [];
+-
+-// We don't really have a class to add signals on. So, create
+-// a simple dummy object, add the signal methods, and export those
+-// publically.
+-var _signals = {};
+-Signals.addSignalMethods(_signals);
+-
+-var connect = _signals.connect.bind(_signals);
+-var disconnect = _signals.disconnect.bind(_signals);
+-
+ const ENABLED_EXTENSIONS_KEY = 'enabled-extensions';
+ const DISABLE_USER_EXTENSIONS_KEY = 'disable-user-extensions';
+ const EXTENSION_DISABLE_VERSION_CHECK_KEY = 'disable-extension-version-validation';
+ 
+-var initted = false;
+-var enabled;
++var ExtensionManager = class {
++    constructor() {
++        this._initted = false;
++        this._enabled = false;
+ 
+-function disableExtension(uuid) {
+-    let extension = ExtensionUtils.extensions[uuid];
+-    if (!extension)
+-        return;
++        this._enabledExtensions = [];
++        this._extensionOrder = [];
+ 
+-    if (extension.state != ExtensionState.ENABLED)
+-        return;
++        Main.sessionMode.connect('updated', this._sessionUpdated.bind(this));
++        this._sessionUpdated();
++    }
+ 
+-    // "Rebase" the extension order by disabling and then enabling extensions
+-    // in order to help prevent conflicts.
++    disableExtension(uuid) {
++        let extension = ExtensionUtils.extensions[uuid];
++        if (!extension)
++            return;
+ 
+-    // Example:
+-    //   order = [A, B, C, D, E]
+-    //   user disables C
+-    //   this should: disable E, disable D, disable C, enable D, enable E
++        if (extension.state != ExtensionState.ENABLED)
++            return;
+ 
+-    let orderIdx = extensionOrder.indexOf(uuid);
+-    let order = extensionOrder.slice(orderIdx + 1);
+-    let orderReversed = order.slice().reverse();
++        // "Rebase" the extension order by disabling and then enabling extensions
++        // in order to help prevent conflicts.
++
++        // Example:
++        //   order = [A, B, C, D, E]
++        //   user disables C
++        //   this should: disable E, disable D, disable C, enable D, enable E
++
++        let orderIdx = this._extensionOrder.indexOf(uuid);
++        let order = this._extensionOrder.slice(orderIdx + 1);
++        let orderReversed = order.slice().reverse();
++
++        for (let i = 0; i < orderReversed.length; i++) {
++            let uuid = orderReversed[i];
++            try {
++                ExtensionUtils.extensions[uuid].stateObj.disable();
++            } catch (e) {
++                this.logExtensionError(uuid, e);
++            }
++        }
++
++        if (extension.stylesheet) {
++            let theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
++            theme.unload_stylesheet(extension.stylesheet);
++            delete extension.stylesheet;
++        }
+ 
+-    for (let i = 0; i < orderReversed.length; i++) {
+-        let uuid = orderReversed[i];
+         try {
+-            ExtensionUtils.extensions[uuid].stateObj.disable();
++            extension.stateObj.disable();
+         } catch(e) {
+-            logExtensionError(uuid, e);
++            this.logExtensionError(uuid, e);
+         }
+-    }
+ 
+-    if (extension.stylesheet) {
+-        let theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
+-        theme.unload_stylesheet(extension.stylesheet);
+-        delete extension.stylesheet;
+-    }
++        for (let i = 0; i < order.length; i++) {
++            let uuid = order[i];
++            try {
++                ExtensionUtils.extensions[uuid].stateObj.enable();
++            } catch (e) {
++                this.logExtensionError(uuid, e);
++            }
++        }
+ 
+-    try {
+-        extension.stateObj.disable();
+-    } catch(e) {
+-        logExtensionError(uuid, e);
+-    }
++        this._extensionOrder.splice(orderIdx, 1);
+ 
+-    for (let i = 0; i < order.length; i++) {
+-        let uuid = order[i];
+-        try {
+-            ExtensionUtils.extensions[uuid].stateObj.enable();
+-        } catch(e) {
+-            logExtensionError(uuid, e);
++        if (extension.state != ExtensionState.ERROR) {
++            extension.state = ExtensionState.DISABLED;
++            this.emit('extension-state-changed', extension);
+         }
+     }
+ 
+-    extensionOrder.splice(orderIdx, 1);
+-
+-    if ( extension.state != ExtensionState.ERROR ) {
+-        extension.state = ExtensionState.DISABLED;
+-        _signals.emit('extension-state-changed', extension);
+-    }
+-}
++    enableExtension(uuid) {
++        let extension = ExtensionUtils.extensions[uuid];
++        if (!extension)
++            return;
+ 
+-function enableExtension(uuid) {
+-    let extension = ExtensionUtils.extensions[uuid];
+-    if (!extension)
+-        return;
++        if (extension.state == ExtensionState.INITIALIZED)
++            this.initExtension(uuid);
+ 
+-    if (extension.state == ExtensionState.INITIALIZED)
+-        initExtension(uuid);
++        if (extension.state != ExtensionState.DISABLED)
++            return;
+ 
+-    if (extension.state != ExtensionState.DISABLED)
+-        return;
++        this._extensionOrder.push(uuid);
+ 
+-    extensionOrder.push(uuid);
++        let stylesheetNames = [global.session_mode + '.css', 'stylesheet.css'];
++        let theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
++        for (let i = 0; i < stylesheetNames.length; i++) {
++            try {
++                let stylesheetFile = extension.dir.get_child(stylesheetNames[i]);
++                theme.load_stylesheet(stylesheetFile);
++                extension.stylesheet = stylesheetFile;
++                break;
++            } catch (e) {
++                if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
++                    continue; // not an error
++                log(`Failed to load stylesheet for extension ${uuid}: ${e.message}`);
++                return;
++            }
++        }
+ 
+-    let stylesheetNames = [global.session_mode + '.css', 'stylesheet.css'];
+-    let theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
+-    for (let i = 0; i < stylesheetNames.length; i++) {
+         try {
+-            let stylesheetFile = extension.dir.get_child(stylesheetNames[i]);
+-            theme.load_stylesheet(stylesheetFile);
+-            extension.stylesheet = stylesheetFile;
+-            break;
++            extension.stateObj.enable();
++            extension.state = ExtensionState.ENABLED;
++            this.emit('extension-state-changed', extension);
++            return;
+         } catch (e) {
+-            if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
+-                continue; // not an error
+-            log(`Failed to load stylesheet for extension ${uuid}: ${e.message}`);
++            if (extension.stylesheet) {
++                theme.unload_stylesheet(extension.stylesheet);
++                delete extension.stylesheet;
++            }
++            this.logExtensionError(uuid, e);
+             return;
+         }
+     }
+ 
+-    try {
+-        extension.stateObj.enable();
+-        extension.state = ExtensionState.ENABLED;
+-        _signals.emit('extension-state-changed', extension);
+-        return;
+-    } catch(e) {
+-        if (extension.stylesheet) {
+-            theme.unload_stylesheet(extension.stylesheet);
+-            delete extension.stylesheet;
+-        }
+-        logExtensionError(uuid, e);
+-        return;
+-    }
+-}
+-
+-function logExtensionError(uuid, error) {
+-    let extension = ExtensionUtils.extensions[uuid];
+-    if (!extension)
+-        return;
++    logExtensionError(uuid, error) {
++        let extension = ExtensionUtils.extensions[uuid];
++        if (!extension)
++            return;
+ 
+-    let message = '' + error;
++        let message = '' + error;
+ 
+-    extension.state = ExtensionState.ERROR;
+-    if (!extension.errors)
+-        extension.errors = [];
+-    extension.errors.push(message);
++        extension.state = ExtensionState.ERROR;
++        if (!extension.errors)
++            extension.errors = [];
++        extension.errors.push(message);
+ 
+-    log('Extension "%s" had error: %s'.format(uuid, message));
+-    _signals.emit('extension-state-changed', { uuid: uuid,
++        log('Extension "%s" had error: %s'.format(uuid, message));
++        this.emit('extension-state-changed', { uuid: uuid,
+                                                error: message,
+                                                state: extension.state });
+-}
++    }
+ 
+-function loadExtension(extension) {
+-    // Default to error, we set success as the last step
+-    extension.state = ExtensionState.ERROR;
++    loadExtension(extension) {
++        // Default to error, we set success as the last step
++        extension.state = ExtensionState.ERROR;
+ 
+-    let checkVersion = !global.settings.get_boolean(EXTENSION_DISABLE_VERSION_CHECK_KEY);
++        let checkVersion = !global.settings.get_boolean(EXTENSION_DISABLE_VERSION_CHECK_KEY);
+ 
+-    if (checkVersion && ExtensionUtils.isOutOfDate(extension)) {
+-        extension.state = ExtensionState.OUT_OF_DATE;
+-    } else {
+-        let enabled = enabledExtensions.indexOf(extension.uuid) != -1;
+-        if (enabled) {
+-            if (!initExtension(extension.uuid))
+-                return;
+-            if (extension.state == ExtensionState.DISABLED)
+-                enableExtension(extension.uuid);
++        if (checkVersion && ExtensionUtils.isOutOfDate(extension)) {
++            extension.state = ExtensionState.OUT_OF_DATE;
+         } else {
+-            extension.state = ExtensionState.INITIALIZED;
++            let enabled = this._enabledExtensions.includes(extension.uuid);
++            if (enabled) {
++                if (!this.initExtension(extension.uuid))
++                    return;
++                if (extension.state == ExtensionState.DISABLED)
++                    this.enableExtension(extension.uuid);
++            } else {
++                extension.state = ExtensionState.INITIALIZED;
++            }
+         }
++
++        this.emit('extension-state-changed', extension);
+     }
+ 
+-    _signals.emit('extension-state-changed', extension);
+-}
+-
+-function unloadExtension(extension) {
+-    // Try to disable it -- if it's ERROR'd, we can't guarantee that,
+-    // but it will be removed on next reboot, and hopefully nothing
+-    // broke too much.
+-    disableExtension(extension.uuid);
+-
+-    extension.state = ExtensionState.UNINSTALLED;
+-    _signals.emit('extension-state-changed', extension);
+-
+-    delete ExtensionUtils.extensions[extension.uuid];
+-    return true;
+-}
+-
+-function reloadExtension(oldExtension) {
+-    // Grab the things we'll need to pass to createExtensionObject
+-    // to reload it.
+-    let { uuid: uuid, dir: dir, type: type } = oldExtension;
+-
+-    // Then unload the old extension.
+-    unloadExtension(oldExtension);
+-
+-    // Now, recreate the extension and load it.
+-    let newExtension;
+-    try {
+-        newExtension = ExtensionUtils.createExtensionObject(uuid, dir, type);
+-    } catch(e) {
+-        logExtensionError(uuid, e);
+-        return;
++    unloadExtension(extension) {
++        // Try to disable it -- if it's ERROR'd, we can't guarantee that,
++        // but it will be removed on next reboot, and hopefully nothing
++        // broke too much.
++        this.disableExtension(extension.uuid);
++
++        extension.state = ExtensionState.UNINSTALLED;
++        this.emit('extension-state-changed', extension);
++
++        delete ExtensionUtils.extensions[extension.uuid];
++        return true;
+     }
+ 
+-    loadExtension(newExtension);
+-}
++    reloadExtension(oldExtension) {
++        // Grab the things we'll need to pass to createExtensionObject
++        // to reload it.
++        let { uuid: uuid, dir: dir, type: type } = oldExtension;
+ 
+-function initExtension(uuid) {
+-    let extension = ExtensionUtils.extensions[uuid];
+-    let dir = extension.dir;
++        // Then unload the old extension.
++        this.unloadExtension(oldExtension);
+ 
+-    if (!extension)
+-        throw new Error("Extension was not properly created. Call loadExtension first");
++        // Now, recreate the extension and load it.
++        let newExtension;
++        try {
++            newExtension = ExtensionUtils.createExtensionObject(uuid, dir, type);
++        } catch (e) {
++            this.logExtensionError(uuid, e);
++            return;
++        }
+ 
+-    let extensionJs = dir.get_child('extension.js');
+-    if (!extensionJs.query_exists(null)) {
+-        logExtensionError(uuid, new Error('Missing extension.js'));
+-        return false;
++        this.loadExtension(newExtension);
+     }
+ 
+-    let extensionModule;
+-    let extensionState = null;
++    initExtension(uuid) {
++        let extension = ExtensionUtils.extensions[uuid];
++        let dir = extension.dir;
+ 
+-    ExtensionUtils.installImporter(extension);
+-    try {
+-        extensionModule = extension.imports.extension;
+-    } catch(e) {
+-        logExtensionError(uuid, e);
+-        return false;
+-    }
++        if (!extension)
++            throw new Error("Extension was not properly created. Call loadExtension first");
++
++        let extensionJs = dir.get_child('extension.js');
++        if (!extensionJs.query_exists(null)) {
++            this.logExtensionError(uuid, new Error('Missing extension.js'));
++            return false;
++        }
++
++        let extensionModule;
++        let extensionState = null;
+ 
+-    if (extensionModule.init) {
++        ExtensionUtils.installImporter(extension);
+         try {
+-            extensionState = extensionModule.init(extension);
++            extensionModule = extension.imports.extension;
+         } catch(e) {
+-            logExtensionError(uuid, e);
++            this.logExtensionError(uuid, e);
+             return false;
+         }
++
++        if (extensionModule.init) {
++            try {
++                extensionState = extensionModule.init(extension);
++            } catch (e) {
++                this.logExtensionError(uuid, e);
++                return false;
++            }
++        }
++
++        if (!extensionState)
++            extensionState = extensionModule;
++        extension.stateObj = extensionState;
++
++        extension.state = ExtensionState.DISABLED;
++        this.emit('extension-loaded', uuid);
++        return true;
+     }
+ 
+-    if (!extensionState)
+-        extensionState = extensionModule;
+-    extension.stateObj = extensionState;
+-
+-    extension.state = ExtensionState.DISABLED;
+-    _signals.emit('extension-loaded', uuid);
+-    return true;
+-}
+-
+-function getEnabledExtensions() {
+-    let extensions;
+-    if (Array.isArray(Main.sessionMode.enabledExtensions))
+-        extensions = Main.sessionMode.enabledExtensions;
+-    else
+-        extensions = [];
+-
+-    if (global.settings.get_boolean(DISABLE_USER_EXTENSIONS_KEY))
+-        return extensions;
+-
+-    return extensions.concat(global.settings.get_strv(ENABLED_EXTENSIONS_KEY));
+-}
+-
+-function onEnabledExtensionsChanged() {
+-    let newEnabledExtensions = getEnabledExtensions();
+-
+-    if (!enabled)
+-        return;
+-
+-    // Find and enable all the newly enabled extensions: UUIDs found in the
+-    // new setting, but not in the old one.
+-    newEnabledExtensions.filter(
+-        uuid => !enabledExtensions.includes(uuid)
+-    ).forEach(uuid => {
+-        enableExtension(uuid);
+-    });
+-
+-    // Find and disable all the newly disabled extensions: UUIDs found in the
+-    // old setting, but not in the new one.
+-    enabledExtensions.filter(
+-        item => !newEnabledExtensions.includes(item)
+-    ).forEach(uuid => {
+-        disableExtension(uuid);
+-    });
+-
+-    enabledExtensions = newEnabledExtensions;
+-}
+-
+-function _onVersionValidationChanged() {
+-    // we want to reload all extensions, but only enable
+-    // extensions when allowed by the sessionMode, so
+-    // temporarily disable them all
+-    enabledExtensions = [];
+-    for (let uuid in ExtensionUtils.extensions)
+-        reloadExtension(ExtensionUtils.extensions[uuid]);
+-    enabledExtensions = getEnabledExtensions();
+-
+-    if (Main.sessionMode.allowExtensions) {
+-        enabledExtensions.forEach(uuid => {
+-            enableExtension(uuid);
+-        });
++    _getEnabledExtensions() {
++        let extensions;
++        if (Array.isArray(Main.sessionMode.enabledExtensions))
++            extensions = Main.sessionMode.enabledExtensions;
++        else
++            extensions = [];
++
++        if (global.settings.get_boolean(DISABLE_USER_EXTENSIONS_KEY))
++            return extensions;
++
++        return extensions.concat(global.settings.get_strv(ENABLED_EXTENSIONS_KEY));
+     }
+-}
+-
+-function _loadExtensions() {
+-    global.settings.connect('changed::' + ENABLED_EXTENSIONS_KEY, onEnabledExtensionsChanged);
+-    global.settings.connect('changed::' + DISABLE_USER_EXTENSIONS_KEY, onEnabledExtensionsChanged);
+-    global.settings.connect('changed::' + EXTENSION_DISABLE_VERSION_CHECK_KEY, _onVersionValidationChanged);
+-
+-    enabledExtensions = getEnabledExtensions();
+-
+-    let finder = new ExtensionUtils.ExtensionFinder();
+-    finder.connect('extension-found', (finder, extension) => {
+-        loadExtension(extension);
+-        if (Main.sessionMode.enabledExtensions.indexOf(extension.uuid) != -1)
+-            extension.type = ExtensionUtils.ExtensionType.SESSION_MODE;
+-    });
+-    finder.scanExtensions();
+-}
+-
+-function enableAllExtensions() {
+-    if (enabled)
+-        return;
+-
+-    if (!initted) {
+-        _loadExtensions();
+-        initted = true;
+-    } else {
+-        enabledExtensions.forEach(uuid => {
+-            enableExtension(uuid);
++
++    _onEnabledExtensionsChanged() {
++        let newEnabledExtensions = this._getEnabledExtensions();
++
++        if (!this._enabled)
++            return;
++
++        // Find and enable all the newly enabled extensions: UUIDs found in the
++        // new setting, but not in the old one.
++        newEnabledExtensions.filter(
++            uuid => !this._enabledExtensions.includes(uuid)
++        ).forEach(uuid => {
++            this.enableExtension(uuid);
+         });
++
++        // Find and disable all the newly disabled extensions: UUIDs found in the
++        // old setting, but not in the new one.
++        this._enabledExtensions.filter(
++            item => !newEnabledExtensions.includes(item)
++        ).forEach(uuid => {
++            this.disableExtension(uuid);
++        });
++
++        this._enabledExtensions = newEnabledExtensions;
++    }
++
++    _onVersionValidationChanged() {
++        // we want to reload all extensions, but only enable
++        // extensions when allowed by the sessionMode, so
++        // temporarily disable them all
++        this._enabledExtensions = [];
++        for (let uuid in ExtensionUtils.extensions)
++            this.reloadExtension(ExtensionUtils.extensions[uuid]);
++        this._enabledExtensions = this._getEnabledExtensions();
++
++        if (Main.sessionMode.allowExtensions) {
++            this._enabledExtensions.forEach(uuid => {
++                this.enableExtension(uuid);
++            });
++        }
+     }
+-    enabled = true;
+-}
+ 
+-function disableAllExtensions() {
+-    if (!enabled)
+-        return;
++    _loadExtensions() {
++        global.settings.connect(`changed::${ENABLED_EXTENSIONS_KEY}`,
++            this._onEnabledExtensionsChanged.bind(this));
++        global.settings.connect(`changed::${DISABLE_USER_EXTENSIONS_KEY}`,
++            this._onEnabledExtensionsChanged.bind(this));
++        global.settings.connect(`changed::${EXTENSION_DISABLE_VERSION_CHECK_KEY}`,
++            this._onVersionValidationChanged.bind(this));
++
++        this._enabledExtensions = this._getEnabledExtensions();
+ 
+-    if (initted) {
+-        extensionOrder.slice().reverse().forEach(uuid => {
+-            disableExtension(uuid);
++        let finder = new ExtensionUtils.ExtensionFinder();
++        finder.connect('extension-found', (finder, extension) => {
++            this.loadExtension(extension);
+         });
++        finder.scanExtensions();
++    }
++
++    enableAllExtensions() {
++        if (this._enabled)
++            return;
++
++        if (!this._initted) {
++            this._loadExtensions();
++            this._initted = true;
++        } else {
++            this._enabledExtensions.forEach(uuid => {
++                this.enableExtension(uuid);
++            });
++        }
++        this._enabled = true;
+     }
+ 
+-    enabled = false;
+-}
+-
+-function _sessionUpdated() {
+-    // For now sessionMode.allowExtensions controls extensions from both the
+-    // 'enabled-extensions' preference and the sessionMode.enabledExtensions
+-    // property; it might make sense to make enabledExtensions independent
+-    // from allowExtensions in the future
+-    if (Main.sessionMode.allowExtensions) {
+-        if (initted)
+-            enabledExtensions = getEnabledExtensions();
+-        enableAllExtensions();
+-    } else {
+-        disableAllExtensions();
++    disableAllExtensions() {
++        if (!this._enabled)
++            return;
++
++        if (this._initted) {
++            this._extensionOrder.slice().reverse().forEach(uuid => {
++                this.disableExtension(uuid);
++            });
++        }
++
++        this._enabled = false;
+     }
+-}
+ 
+-function init() {
+-    Main.sessionMode.connect('updated', _sessionUpdated);
+-    _sessionUpdated();
+-}
++    _sessionUpdated() {
++        // For now sessionMode.allowExtensions controls extensions from both the
++        // 'enabled-extensions' preference and the sessionMode.enabledExtensions
++        // property; it might make sense to make enabledExtensions independent
++        // from allowExtensions in the future
++        if (Main.sessionMode.allowExtensions) {
++            if (this._initted)
++                this._enabledExtensions = this._getEnabledExtensions();
++            this.enableAllExtensions();
++        } else {
++            this.disableAllExtensions();
++        }
++    }
++};
++Signals.addSignalMethods(ExtensionManager.prototype);
+diff --git a/js/ui/lookingGlass.js b/js/ui/lookingGlass.js
+index fefb3f731..e947574f2 100644
+--- a/js/ui/lookingGlass.js
++++ b/js/ui/lookingGlass.js
+@@ -7,7 +7,6 @@ const Signals = imports.signals;
+ const System = imports.system;
+ 
+ const History = imports.misc.history;
+-const ExtensionSystem = imports.ui.extensionSystem;
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const ShellEntry = imports.ui.shellEntry;
+ const Tweener = imports.ui.tweener;
+@@ -624,8 +623,8 @@ var Extensions = class Extensions {
+         for (let uuid in ExtensionUtils.extensions)
+             this._loadExtension(null, uuid);
+ 
+-        ExtensionSystem.connect('extension-loaded',
+-                                this._loadExtension.bind(this));
++        Main.extensionManager.connect('extension-loaded',
++                                      this._loadExtension.bind(this));
+     }
+ 
+     _loadExtension(o, uuid) {
+diff --git a/js/ui/main.js b/js/ui/main.js
+index 8dde95bf9..7bfbce497 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -43,6 +43,7 @@ const STICKY_KEYS_ENABLE = 'stickykeys-enable';
+ const GNOMESHELL_STARTED_MESSAGE_ID = 'f3ea493c22934e26811cd62abe8e203a';
+ 
+ var componentManager = null;
++var extensionManager = null;
+ var panel = null;
+ var overview = null;
+ var runDialog = null;
+@@ -218,7 +219,7 @@ function _initializeUI() {
+     _startDate = new Date();
+ 
+     ExtensionDownloader.init();
+-    ExtensionSystem.init();
++    extensionManager = new ExtensionSystem.ExtensionManager();
+ 
+     if (sessionMode.isGreeter && screenShield) {
+         layoutManager.connect('startup-prepared', () => {
+diff --git a/js/ui/shellDBus.js b/js/ui/shellDBus.js
+index 112d60feb..4b04e68ac 100644
+--- a/js/ui/shellDBus.js
++++ b/js/ui/shellDBus.js
+@@ -4,7 +4,6 @@ const { Gio, GLib, Meta, Shell } = imports.gi;
+ const Lang = imports.lang;
+ 
+ const Config = imports.misc.config;
+-const ExtensionSystem = imports.ui.extensionSystem;
+ const ExtensionDownloader = imports.ui.extensionDownloader;
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const Main = imports.ui.main;
+@@ -250,8 +249,8 @@ var GnomeShellExtensions = class {
+     constructor() {
+         this._dbusImpl = Gio.DBusExportedObject.wrapJSObject(GnomeShellExtensionsIface, this);
+         this._dbusImpl.export(Gio.DBus.session, '/org/gnome/Shell');
+-        ExtensionSystem.connect('extension-state-changed',
+-                                this._extensionStateChanged.bind(this));
++        Main.extensionManager.connect('extension-state-changed',
++                                      this._extensionStateChanged.bind(this));
+     }
+ 
+     ListExtensions() {
+@@ -334,7 +333,7 @@ var GnomeShellExtensions = class {
+         if (!extension)
+             return;
+ 
+-        ExtensionSystem.reloadExtension(extension);
++        Main.extensionManager.reloadExtension(extension);
+     }
+ 
+     CheckForUpdates() {
+-- 
+2.29.2
+
+
+From 7419ee28b5b568dd4478db7f3c890ff01678637a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 8 Jul 2019 02:53:32 +0200
+Subject: [PATCH 03/26] extensionSystem: Make methods to call extension
+ functions private
+
+While public methods to enable/disable extensions make sense for an
+extension manager, the existing ones are only used internally. Make
+them private and rename them, so that we can re-use the current
+names for more useful public methods.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/ui/extensionSystem.js | 32 ++++++++++++++++----------------
+ 1 file changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index b7e908223..c5fb007ae 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -24,7 +24,7 @@ var ExtensionManager = class {
+         this._sessionUpdated();
+     }
+ 
+-    disableExtension(uuid) {
++    _callExtensionDisable(uuid) {
+         let extension = ExtensionUtils.extensions[uuid];
+         if (!extension)
+             return;
+@@ -82,13 +82,13 @@ var ExtensionManager = class {
+         }
+     }
+ 
+-    enableExtension(uuid) {
++    _callExtensionEnable(uuid) {
+         let extension = ExtensionUtils.extensions[uuid];
+         if (!extension)
+             return;
+ 
+         if (extension.state == ExtensionState.INITIALIZED)
+-            this.initExtension(uuid);
++            this._callExtensionInit(uuid);
+ 
+         if (extension.state != ExtensionState.DISABLED)
+             return;
+@@ -155,10 +155,10 @@ var ExtensionManager = class {
+         } else {
+             let enabled = this._enabledExtensions.includes(extension.uuid);
+             if (enabled) {
+-                if (!this.initExtension(extension.uuid))
++                if (!this._callExtensionInit(extension.uuid))
+                     return;
+                 if (extension.state == ExtensionState.DISABLED)
+-                    this.enableExtension(extension.uuid);
++                    this._callExtensionEnable(extension.uuid);
+             } else {
+                 extension.state = ExtensionState.INITIALIZED;
+             }
+@@ -171,7 +171,7 @@ var ExtensionManager = class {
+         // Try to disable it -- if it's ERROR'd, we can't guarantee that,
+         // but it will be removed on next reboot, and hopefully nothing
+         // broke too much.
+-        this.disableExtension(extension.uuid);
++        this._callExtensionDisable(extension.uuid);
+ 
+         extension.state = ExtensionState.UNINSTALLED;
+         this.emit('extension-state-changed', extension);
+@@ -200,7 +200,7 @@ var ExtensionManager = class {
+         this.loadExtension(newExtension);
+     }
+ 
+-    initExtension(uuid) {
++    _callExtensionInit(uuid) {
+         let extension = ExtensionUtils.extensions[uuid];
+         let dir = extension.dir;
+ 
+@@ -266,7 +266,7 @@ var ExtensionManager = class {
+         newEnabledExtensions.filter(
+             uuid => !this._enabledExtensions.includes(uuid)
+         ).forEach(uuid => {
+-            this.enableExtension(uuid);
++            this._callExtensionEnable(uuid);
+         });
+ 
+         // Find and disable all the newly disabled extensions: UUIDs found in the
+@@ -274,7 +274,7 @@ var ExtensionManager = class {
+         this._enabledExtensions.filter(
+             item => !newEnabledExtensions.includes(item)
+         ).forEach(uuid => {
+-            this.disableExtension(uuid);
++            this._callExtensionDisable(uuid);
+         });
+ 
+         this._enabledExtensions = newEnabledExtensions;
+@@ -291,7 +291,7 @@ var ExtensionManager = class {
+ 
+         if (Main.sessionMode.allowExtensions) {
+             this._enabledExtensions.forEach(uuid => {
+-                this.enableExtension(uuid);
++                this._callExtensionEnable(uuid);
+             });
+         }
+     }
+@@ -313,7 +313,7 @@ var ExtensionManager = class {
+         finder.scanExtensions();
+     }
+ 
+-    enableAllExtensions() {
++    _enableAllExtensions() {
+         if (this._enabled)
+             return;
+ 
+@@ -322,19 +322,19 @@ var ExtensionManager = class {
+             this._initted = true;
+         } else {
+             this._enabledExtensions.forEach(uuid => {
+-                this.enableExtension(uuid);
++                this._callExtensionEnable(uuid);
+             });
+         }
+         this._enabled = true;
+     }
+ 
+-    disableAllExtensions() {
++    _disableAllExtensions() {
+         if (!this._enabled)
+             return;
+ 
+         if (this._initted) {
+             this._extensionOrder.slice().reverse().forEach(uuid => {
+-                this.disableExtension(uuid);
++                this._callExtensionDisable(uuid);
+             });
+         }
+ 
+@@ -349,9 +349,9 @@ var ExtensionManager = class {
+         if (Main.sessionMode.allowExtensions) {
+             if (this._initted)
+                 this._enabledExtensions = this._getEnabledExtensions();
+-            this.enableAllExtensions();
++            this._enableAllExtensions();
+         } else {
+-            this.disableAllExtensions();
++            this._disableAllExtensions();
+         }
+     }
+ };
+-- 
+2.29.2
+
+
+From e88419278531b136984f9f05a8c056145d03edba Mon Sep 17 00:00:00 2001
+From: Didier Roche <didrocks@ubuntu.com>
+Date: Wed, 17 Jan 2018 13:43:11 +0100
+Subject: [PATCH 04/26] extensionSystem: Add methods to enable/disable
+ extensions
+
+Extensions are currently enabled or disabled by directly changing the
+list in the 'enabled-extensions' GSettings key. As we will soon add
+an overriding 'disabled-extensions' key as well, it makes sense to
+offer explicit API for enabling/disabling to avoid duplicating the
+logic.
+
+For the corresponding D-Bus API, the methods were even mentioned in
+the GSettings schema, albeit unimplemented until now.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ .../org.gnome.Shell.Extensions.xml            | 24 +++++++++++++++++
+ js/ui/extensionDownloader.js                  | 12 ++-------
+ js/ui/extensionSystem.js                      | 26 +++++++++++++++++++
+ js/ui/shellDBus.js                            |  8 ++++++
+ 4 files changed, 60 insertions(+), 10 deletions(-)
+
+diff --git a/data/dbus-interfaces/org.gnome.Shell.Extensions.xml b/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
+index ce69439fc..22273f889 100644
+--- a/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
++++ b/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
+@@ -173,6 +173,30 @@
+       <arg type="s" direction="in" name="uuid"/>
+     </method>
+ 
++    <!--
++        EnableExtension:
++        @uuid: The UUID of the extension
++        @success: Whether the operation was successful
++
++        Enable an extension.
++    -->
++    <method name="EnableExtension"> \
++      <arg type="s" direction="in" name="uuid"/> \
++      <arg type="b" direction="out" name="success"/> \
++    </method> \
++
++    <!--
++        DisableExtension:
++        @uuid: The UUID of the extension
++        @success: Whether the operation was successful
++
++        Disable an extension.
++    -->
++    <method name="DisableExtension"> \
++      <arg type="s" direction="in" name="uuid"/> \
++      <arg type="b" direction="out" name="success"/> \
++    </method> \
++
+     <!--
+         LaunchExtensionPrefs:
+         @uuid: The UUID of the extension
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index fe37463f2..de52edfa6 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -4,13 +4,10 @@ const { Clutter, Gio, GLib, Soup, St } = imports.gi;
+ 
+ const Config = imports.misc.config;
+ const ExtensionUtils = imports.misc.extensionUtils;
+-const ExtensionSystem = imports.ui.extensionSystem;
+ const FileUtils = imports.misc.fileUtils;
+ const Main = imports.ui.main;
+ const ModalDialog = imports.ui.modalDialog;
+ 
+-const _signals = ExtensionSystem._signals;
+-
+ var REPOSITORY_URL_BASE = 'https://extensions.gnome.org';
+ var REPOSITORY_URL_DOWNLOAD = REPOSITORY_URL_BASE + '/download-extension/%s.shell-extension.zip';
+ var REPOSITORY_URL_INFO     = REPOSITORY_URL_BASE + '/extension-info/';
+@@ -231,16 +228,11 @@ class InstallExtensionDialog extends ModalDialog.ModalDialog {
+         }
+ 
+         function callback() {
+-            // Add extension to 'enabled-extensions' for the user, always...
+-            let enabledExtensions = global.settings.get_strv(ExtensionSystem.ENABLED_EXTENSIONS_KEY);
+-            if (enabledExtensions.indexOf(uuid) == -1) {
+-                enabledExtensions.push(uuid);
+-                global.settings.set_strv(ExtensionSystem.ENABLED_EXTENSIONS_KEY, enabledExtensions);
+-            }
+-
+             try {
+                 let extension = ExtensionUtils.createExtensionObject(uuid, dir, ExtensionUtils.ExtensionType.PER_USER);
+                 Main.extensionManager.loadExtension(extension);
++                if (!Main.extensionManager.enableExtension(uuid))
++                    throw new Error(`Cannot add ${uuid} to enabled extensions gsettings key`);
+             } catch(e) {
+                 uninstallExtension(uuid);
+                 errback('LoadExtensionError', e);
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index c5fb007ae..8ff0fa56f 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -126,6 +126,32 @@ var ExtensionManager = class {
+         }
+     }
+ 
++    enableExtension(uuid) {
++        if (!ExtensionUtils.extensions[uuid])
++            return false;
++
++        let enabledExtensions = global.settings.get_strv(ENABLED_EXTENSIONS_KEY);
++        if (!enabledExtensions.includes(uuid)) {
++            enabledExtensions.push(uuid);
++            global.settings.set_strv(ENABLED_EXTENSIONS_KEY, enabledExtensions);
++        }
++
++        return true;
++    }
++
++    disableExtension(uuid) {
++        if (!ExtensionUtils.extensions[uuid])
++            return false;
++
++        let enabledExtensions = global.settings.get_strv(ENABLED_EXTENSIONS_KEY);
++        if (enabledExtensions.includes(uuid)) {
++            enabledExtensions = enabledExtensions.filter(item => item !== uuid);
++            global.settings.set_strv(ENABLED_EXTENSIONS_KEY, enabledExtensions);
++        }
++
++        return true;
++    }
++
+     logExtensionError(uuid, error) {
+         let extension = ExtensionUtils.extensions[uuid];
+         if (!extension)
+diff --git a/js/ui/shellDBus.js b/js/ui/shellDBus.js
+index 4b04e68ac..0ded84874 100644
+--- a/js/ui/shellDBus.js
++++ b/js/ui/shellDBus.js
+@@ -319,6 +319,14 @@ var GnomeShellExtensions = class {
+         return ExtensionDownloader.uninstallExtension(uuid);
+     }
+ 
++    EnableExtension(uuid) {
++        return Main.extensionManager.enableExtension(uuid);
++    }
++
++    DisableExtension(uuid) {
++        return Main.extensionManager.disableExtension(uuid);
++    }
++
+     LaunchExtensionPrefs(uuid) {
+         let appSys = Shell.AppSystem.get_default();
+         let app = appSys.lookup_app('gnome-shell-extension-prefs.desktop');
+-- 
+2.29.2
+
+
+From 2787cff52570d1343f46e4f6ea96aa338a769182 Mon Sep 17 00:00:00 2001
+From: Didier Roche <didrocks@ubuntu.com>
+Date: Thu, 1 Nov 2018 13:55:17 +0100
+Subject: [PATCH 05/26] extensionUtils: Add functions to (de)serialize
+ extensions
+
+Serializing an extension for sending over D-Bus is currently done by the
+appropriate D-Bus method implementations. Split out the code as utility
+function and add a corresponding deserialization function, which we will
+soon use when consuming the D-Bus extension API from the extension-prefs
+tool.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/misc/extensionUtils.js | 53 +++++++++++++++++++++++++++++++++++++--
+ js/ui/shellDBus.js        | 38 ++--------------------------
+ 2 files changed, 53 insertions(+), 38 deletions(-)
+
+diff --git a/js/misc/extensionUtils.js b/js/misc/extensionUtils.js
+index dc6e74cf8..bc9c36f4e 100644
+--- a/js/misc/extensionUtils.js
++++ b/js/misc/extensionUtils.js
+@@ -3,11 +3,12 @@
+ // Common utils for the extension system and the extension
+ // preferences tool
+ 
++const { Gio, GLib } = imports.gi;
++
+ const Gettext = imports.gettext;
++const Lang = imports.lang;
+ const Signals = imports.signals;
+ 
+-const Gio = imports.gi.Gio;
+-
+ const Config = imports.misc.config;
+ const FileUtils = imports.misc.fileUtils;
+ 
+@@ -30,6 +31,8 @@ var ExtensionState = {
+     UNINSTALLED: 99
+ };
+ 
++const SERIALIZED_PROPERTIES = ['type', 'state', 'path', 'error', 'hasPrefs'];
++
+ // Maps uuid -> metadata object
+ var extensions = {};
+ 
+@@ -225,6 +228,52 @@ function createExtensionObject(uuid, dir, type) {
+     return extension;
+ }
+ 
++function serializeExtension(extension) {
++    let obj = {};
++    Lang.copyProperties(extension.metadata, obj);
++
++    SERIALIZED_PROPERTIES.forEach(prop => {
++        obj[prop] = extension[prop];
++    });
++
++    let res = {};
++    for (let key in obj) {
++        let val = obj[key];
++        let type;
++        switch (typeof val) {
++        case 'string':
++            type = 's';
++            break;
++        case 'number':
++            type = 'd';
++            break;
++        case 'boolean':
++            type = 'b';
++            break;
++        default:
++            continue;
++        }
++        res[key] = GLib.Variant.new(type, val);
++    }
++
++    return res;
++}
++
++function deserializeExtension(variant) {
++    let res = { metadata: {} };
++    for (let prop in variant) {
++        let val = variant[prop].unpack();
++        if (SERIALIZED_PROPERTIES.includes(prop))
++            res[prop] = val;
++        else
++            res.metadata[prop] = val;
++    }
++    // add the 2 additional properties to create a valid extension object, as createExtensionObject()
++    res.uuid = res.metadata.uuid;
++    res.dir = Gio.File.new_for_path(res.path);
++    return res;
++}
++
+ function installImporter(extension) {
+     let oldSearchPath = imports.searchPath.slice();  // make a copy
+     imports.searchPath = [extension.dir.get_parent().get_path()];
+diff --git a/js/ui/shellDBus.js b/js/ui/shellDBus.js
+index 0ded84874..af5889789 100644
+--- a/js/ui/shellDBus.js
++++ b/js/ui/shellDBus.js
+@@ -1,7 +1,6 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+ const { Gio, GLib, Meta, Shell } = imports.gi;
+-const Lang = imports.lang;
+ 
+ const Config = imports.misc.config;
+ const ExtensionDownloader = imports.ui.extensionDownloader;
+@@ -263,41 +262,8 @@ var GnomeShellExtensions = class {
+     }
+ 
+     GetExtensionInfo(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
+-        if (!extension)
+-            return {};
+-
+-        let obj = {};
+-        Lang.copyProperties(extension.metadata, obj);
+-
+-        // Only serialize the properties that we actually need.
+-        const serializedProperties = ["type", "state", "path", "error", "hasPrefs"];
+-
+-        serializedProperties.forEach(prop => {
+-            obj[prop] = extension[prop];
+-        });
+-
+-        let out = {};
+-        for (let key in obj) {
+-            let val = obj[key];
+-            let type;
+-            switch (typeof val) {
+-            case 'string':
+-                type = 's';
+-                break;
+-            case 'number':
+-                type = 'd';
+-                break;
+-            case 'boolean':
+-                type = 'b';
+-                break;
+-            default:
+-                continue;
+-            }
+-            out[key] = GLib.Variant.new(type, val);
+-        }
+-
+-        return out;
++        let extension = ExtensionUtils.extensions[uuid] || {};
++        return ExtensionUtils.serializeExtension(extension);
+     }
+ 
+     GetExtensionErrors(uuid) {
+-- 
+2.29.2
+
+
+From 779025379a32f0c6457cc9518bd1f4eff1330239 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 8 Jul 2019 12:21:10 +0200
+Subject: [PATCH 06/26] shellDBus: Add new 'ExtensionStateChanged' signal
+
+The existing 'ExtensionStatusChanged' signal has a fixed set of parameters,
+which means we cannot add additional state without an API break.  Deprecate
+it in favor of a new 'ExtensionStateChanged' signal which addresses this
+issue by taking the full serialized extension as parameter.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ data/dbus-interfaces/org.gnome.Shell.Extensions.xml | 9 +++++++++
+ js/extensionPrefs/main.js                           | 2 +-
+ js/ui/extensionSystem.js                            | 5 ++---
+ js/ui/shellDBus.js                                  | 4 ++++
+ 4 files changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/data/dbus-interfaces/org.gnome.Shell.Extensions.xml b/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
+index 22273f889..6eb3ddc14 100644
+--- a/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
++++ b/data/dbus-interfaces/org.gnome.Shell.Extensions.xml
+@@ -226,6 +226,15 @@
+         <arg type="b" direction="out" name="success"/>
+     </method>
+ 
++    <signal name="ExtensionStateChanged">
++      <arg type="s" name="uuid"/>
++      <arg type="a{sv}" name="state"/>
++    </signal>
++
++    <!--
++        ExtensionStatusChanged:
++        Deprecated for ExtensionStateChanged
++    -->
+     <signal name="ExtensionStatusChanged">
+       <arg type="s" name="uuid"/>
+       <arg type="i" name="state"/>
+diff --git a/js/extensionPrefs/main.js b/js/extensionPrefs/main.js
+index 43efa95e9..2b4ce5753 100644
+--- a/js/extensionPrefs/main.js
++++ b/js/extensionPrefs/main.js
+@@ -241,7 +241,7 @@ var Application = class {
+         this._mainStack.add_named(new EmptyPlaceholder(), 'placeholder');
+ 
+         this._shellProxy = new GnomeShellProxy(Gio.DBus.session, 'org.gnome.Shell', '/org/gnome/Shell');
+-        this._shellProxy.connectSignal('ExtensionStatusChanged', (proxy, senderName, [uuid, state, error]) => {
++        this._shellProxy.connectSignal('ExtensionStateChanged', (proxy, senderName, [uuid, state]) => {
+             if (ExtensionUtils.extensions[uuid] !== undefined)
+                 this._scanExtensions();
+         });
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 8ff0fa56f..98eaf5259 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -159,15 +159,14 @@ var ExtensionManager = class {
+ 
+         let message = '' + error;
+ 
++        extension.error = message;
+         extension.state = ExtensionState.ERROR;
+         if (!extension.errors)
+             extension.errors = [];
+         extension.errors.push(message);
+ 
+         log('Extension "%s" had error: %s'.format(uuid, message));
+-        this.emit('extension-state-changed', { uuid: uuid,
+-                                               error: message,
+-                                               state: extension.state });
++        this.emit('extension-state-changed', extension);
+     }
+ 
+     loadExtension(extension) {
+diff --git a/js/ui/shellDBus.js b/js/ui/shellDBus.js
+index af5889789..23274c0a3 100644
+--- a/js/ui/shellDBus.js
++++ b/js/ui/shellDBus.js
+@@ -335,6 +335,10 @@ var GnomeShellExtensions = class {
+     }
+ 
+     _extensionStateChanged(_, newState) {
++        let state = ExtensionUtils.serializeExtension(newState);
++        this._dbusImpl.emit_signal('ExtensionStateChanged',
++            new GLib.Variant('(sa{sv})', [newState.uuid, state]));
++
+         this._dbusImpl.emit_signal('ExtensionStatusChanged',
+                                    GLib.Variant.new('(sis)', [newState.uuid, newState.state, newState.error]));
+     }
+-- 
+2.29.2
+
+
+From 47d185f8964f9e04430f4ef97d6d712faaf32078 Mon Sep 17 00:00:00 2001
+From: Didier Roche <didrocks@ubuntu.com>
+Date: Tue, 4 Dec 2018 09:31:27 +0100
+Subject: [PATCH 07/26] extensionSystem: Add canChange property to extensions
+
+Whether or not an extension can be enabled/disabled depends on various
+factors: Whether the extension is in error state, whether user extensions
+are disabled and whether the underlying GSettings keys are writable.
+
+This is complex enough to share the logic, so add it to the extension
+properties that are exposed over D-Bus.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/misc/extensionUtils.js |  3 ++-
+ js/ui/extensionSystem.js  | 44 +++++++++++++++++++++++++++++++++------
+ 2 files changed, 40 insertions(+), 7 deletions(-)
+
+diff --git a/js/misc/extensionUtils.js b/js/misc/extensionUtils.js
+index bc9c36f4e..025cd042e 100644
+--- a/js/misc/extensionUtils.js
++++ b/js/misc/extensionUtils.js
+@@ -31,7 +31,7 @@ var ExtensionState = {
+     UNINSTALLED: 99
+ };
+ 
+-const SERIALIZED_PROPERTIES = ['type', 'state', 'path', 'error', 'hasPrefs'];
++const SERIALIZED_PROPERTIES = ['type', 'state', 'path', 'error', 'hasPrefs', 'canChange'];
+ 
+ // Maps uuid -> metadata object
+ var extensions = {};
+@@ -222,6 +222,7 @@ function createExtensionObject(uuid, dir, type) {
+     extension.path = dir.get_path();
+     extension.error = '';
+     extension.hasPrefs = dir.get_child('prefs.js').query_exists(null);
++    extension.canChange = false;
+ 
+     extensions[uuid] = extension;
+ 
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 98eaf5259..a83e53c83 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -189,6 +189,7 @@ var ExtensionManager = class {
+             }
+         }
+ 
++        this._updateCanChange(extension);
+         this.emit('extension-state-changed', extension);
+     }
+ 
+@@ -267,12 +268,28 @@ var ExtensionManager = class {
+         return true;
+     }
+ 
+-    _getEnabledExtensions() {
+-        let extensions;
++    _getModeExtensions() {
+         if (Array.isArray(Main.sessionMode.enabledExtensions))
+-            extensions = Main.sessionMode.enabledExtensions;
+-        else
+-            extensions = [];
++            return Main.sessionMode.enabledExtensions;
++        return [];
++    }
++
++    _updateCanChange(extension) {
++        let hasError =
++            extension.state == ExtensionState.ERROR ||
++            extension.state == ExtensionState.OUT_OF_DATE;
++
++        let isMode = this._getModeExtensions().includes(extension.uuid);
++        let modeOnly = global.settings.get_boolean(DISABLE_USER_EXTENSIONS_KEY);
++
++        extension.canChange =
++            !hasError &&
++            global.settings.is_writable(ENABLED_EXTENSIONS_KEY) &&
++            (isMode || !modeOnly);
++    }
++
++    _getEnabledExtensions() {
++        let extensions = this._getModeExtensions();
+ 
+         if (global.settings.get_boolean(DISABLE_USER_EXTENSIONS_KEY))
+             return extensions;
+@@ -280,6 +297,11 @@ var ExtensionManager = class {
+         return extensions.concat(global.settings.get_strv(ENABLED_EXTENSIONS_KEY));
+     }
+ 
++    _onUserExtensionsEnabledChanged() {
++        this._onEnabledExtensionsChanged();
++        this._onSettingsWritableChanged();
++    }
++
+     _onEnabledExtensionsChanged() {
+         let newEnabledExtensions = this._getEnabledExtensions();
+ 
+@@ -305,6 +327,14 @@ var ExtensionManager = class {
+         this._enabledExtensions = newEnabledExtensions;
+     }
+ 
++    _onSettingsWritableChanged() {
++        for (let uuid in ExtensionUtils.extensions) {
++            let extension = ExtensionUtils.extensions[uuid];
++            this._updateCanChange(extension);
++            this.emit('extension-state-changed', extension);
++        }
++    }
++
+     _onVersionValidationChanged() {
+         // we want to reload all extensions, but only enable
+         // extensions when allowed by the sessionMode, so
+@@ -325,9 +355,11 @@ var ExtensionManager = class {
+         global.settings.connect(`changed::${ENABLED_EXTENSIONS_KEY}`,
+             this._onEnabledExtensionsChanged.bind(this));
+         global.settings.connect(`changed::${DISABLE_USER_EXTENSIONS_KEY}`,
+-            this._onEnabledExtensionsChanged.bind(this));
++            this._onUserExtensionsEnabledChanged.bind(this));
+         global.settings.connect(`changed::${EXTENSION_DISABLE_VERSION_CHECK_KEY}`,
+             this._onVersionValidationChanged.bind(this));
++        global.settings.connect(`writable-changed::${ENABLED_EXTENSIONS_KEY}`,
++            this._onSettingsWritableChanged.bind(this));
+ 
+         this._enabledExtensions = this._getEnabledExtensions();
+ 
+-- 
+2.29.2
+
+
+From ce14c00ca0707c78dc920ede3a157b7c9d55fff5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 28 May 2019 23:22:37 +0200
+Subject: [PATCH 08/26] extensionPrefs: Inherit from Gtk.Application
+
+Extension preferences Application class is just a container for a GtkApplication
+so instead of using composition we can inherit from the base GObject class.
+
+Also replace signal connections with vfunc's.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/631
+---
+ js/extensionPrefs/main.js | 35 +++++++++++++++++------------------
+ 1 file changed, 17 insertions(+), 18 deletions(-)
+
+diff --git a/js/extensionPrefs/main.js b/js/extensionPrefs/main.js
+index 2b4ce5753..94a5b12fe 100644
+--- a/js/extensionPrefs/main.js
++++ b/js/extensionPrefs/main.js
+@@ -17,18 +17,16 @@ function stripPrefix(string, prefix) {
+     return string;
+ }
+ 
+-var Application = class {
+-    constructor() {
++var Application = GObject.registerClass({
++    GTypeName: 'ExtensionPrefs_Application'
++}, class Application extends Gtk.Application {
++    _init() {
+         GLib.set_prgname('gnome-shell-extension-prefs');
+-        this.application = new Gtk.Application({
++        super._init({
+             application_id: 'org.gnome.shell.ExtensionPrefs',
+             flags: Gio.ApplicationFlags.HANDLES_COMMAND_LINE
+         });
+ 
+-        this.application.connect('activate', this._onActivate.bind(this));
+-        this.application.connect('command-line', this._onCommandLine.bind(this));
+-        this.application.connect('startup', this._onStartup.bind(this));
+-
+         this._extensionPrefsModules = {};
+ 
+         this._startupUuid = null;
+@@ -84,7 +82,7 @@ var Application = class {
+                                                 visible: true }));
+ 
+         if (this._skipMainWindow) {
+-            this.application.add_window(dialog);
++            this.add_window(dialog);
+             if (this._window)
+                 this._window.destroy();
+             this._window = dialog;
+@@ -206,8 +204,8 @@ var Application = class {
+         return scroll;
+     }
+ 
+-    _buildUI(app) {
+-        this._window = new Gtk.ApplicationWindow({ application: app,
++    _buildUI() {
++        this._window = new Gtk.ApplicationWindow({ application: this,
+                                                    window_position: Gtk.WindowPosition.CENTER });
+ 
+         this._window.set_default_size(800, 500);
+@@ -295,17 +293,19 @@ var Application = class {
+         this._loaded = true;
+     }
+ 
+-    _onActivate() {
++    vfunc_activate() {
+         this._window.present();
+     }
+ 
+-    _onStartup(app) {
+-        this._buildUI(app);
++    vfunc_startup() {
++        super.vfunc_startup();
++
++        this._buildUI();
+         this._scanExtensions();
+     }
+ 
+-    _onCommandLine(app, commandLine) {
+-        app.activate();
++    vfunc_command_line(commandLine) {
++        this.activate();
+         let args = commandLine.get_arguments();
+ 
+         if (args.length) {
+@@ -325,7 +325,7 @@ var Application = class {
+         }
+         return 0;
+     }
+-};
++});
+ 
+ var Expander = GObject.registerClass({
+     Properties: {
+@@ -631,6 +631,5 @@ function main(argv) {
+     Gettext.bindtextdomain(Config.GETTEXT_PACKAGE, Config.LOCALEDIR);
+     Gettext.textdomain(Config.GETTEXT_PACKAGE);
+ 
+-    let app = new Application();
+-    app.application.run(argv);
++    new Application().run(argv);
+ }
+-- 
+2.29.2
+
+
+From ea202d21b65c027db03e773a51bd8fecf4a2fb0a Mon Sep 17 00:00:00 2001
+From: Didier Roche <didrocks@ubuntu.com>
+Date: Thu, 1 Nov 2018 13:50:30 +0100
+Subject: [PATCH 09/26] extensionPrefs: Attach extension object to each row
+
+Each row represents an extension, so it makes sense to associate the
+rows with the actual extensions instead of linking rows and extensions
+by looking up the UUID in the external extensions map in ExtensionUtils.
+
+This will also make it much easier to stop using the shared extension
+loading / map in favor of the extension D-Bus API.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/extensionPrefs/main.js | 120 +++++++++++++++++++-------------------
+ 1 file changed, 60 insertions(+), 60 deletions(-)
+
+diff --git a/js/extensionPrefs/main.js b/js/extensionPrefs/main.js
+index 94a5b12fe..7e7b2dcc7 100644
+--- a/js/extensionPrefs/main.js
++++ b/js/extensionPrefs/main.js
+@@ -34,52 +34,31 @@ var Application = GObject.registerClass({
+         this._skipMainWindow = false;
+     }
+ 
+-    _extensionAvailable(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
+-
+-        if (!extension)
+-            return false;
++    _showPrefs(uuid) {
++        let row = this._extensionSelector.get_children().find(c => {
++            return c.uuid === uuid && c.hasPrefs;
++        });
+ 
+-        if (!extension.dir.get_child('prefs.js').query_exists(null))
++        if (!row)
+             return false;
+ 
+-        return true;
+-    }
+-
+-    _getExtensionPrefsModule(extension) {
+-        let uuid = extension.metadata.uuid;
+-
+-        if (this._extensionPrefsModules.hasOwnProperty(uuid))
+-            return this._extensionPrefsModules[uuid];
+-
+-        ExtensionUtils.installImporter(extension);
+-
+-        let prefsModule = extension.imports.prefs;
+-        prefsModule.init(extension.metadata);
+-
+-        this._extensionPrefsModules[uuid] = prefsModule;
+-        return prefsModule;
+-    }
+-
+-    _selectExtension(uuid) {
+-        if (!this._extensionAvailable(uuid))
+-            return;
+-
+-        let extension = ExtensionUtils.extensions[uuid];
+         let widget;
+ 
+         try {
+-            let prefsModule = this._getExtensionPrefsModule(extension);
+-            widget = prefsModule.buildPrefsWidget();
++            widget = row.prefsModule.buildPrefsWidget();
+         } catch (e) {
+-            widget = this._buildErrorUI(extension, e);
++            widget = this._buildErrorUI(row, e);
+         }
+ 
+-        let dialog = new Gtk.Window({ modal: !this._skipMainWindow,
+-                                      type_hint: Gdk.WindowTypeHint.DIALOG });
+-        dialog.set_titlebar(new Gtk.HeaderBar({ show_close_button: true,
+-                                                title: extension.metadata.name,
+-                                                visible: true }));
++        let dialog = new Gtk.Window({
++            modal: !this._skipMainWindow,
++            type_hint: Gdk.WindowTypeHint.DIALOG
++        });
++        dialog.set_titlebar(new Gtk.HeaderBar({
++            show_close_button: true,
++            title: row.name,
++            visible: true
++        }));
+ 
+         if (this._skipMainWindow) {
+             this.add_window(dialog);
+@@ -96,7 +75,7 @@ var Application = GObject.registerClass({
+         dialog.show();
+     }
+ 
+-    _buildErrorUI(extension, exc) {
++    _buildErrorUI(row, exc) {
+         let scroll = new Gtk.ScrolledWindow({
+             hscrollbar_policy: Gtk.PolicyType.NEVER,
+             propagate_natural_height: true
+@@ -183,13 +162,13 @@ var Application = GObject.registerClass({
+             label: _("Homepage"),
+             tooltip_text: _("Visit extension homepage"),
+             no_show_all: true,
+-            visible: extension.metadata.url != null
++            visible: row.url != null
+         });
+         toolbar.add(urlButton);
+ 
+         urlButton.connect('clicked', w => {
+             let context = w.get_display().get_app_launch_context();
+-            Gio.AppInfo.launch_default_for_uri(extension.metadata.url, context);
++            Gio.AppInfo.launch_default_for_uri(row.url, context);
+         });
+ 
+         let expandedBox = new Gtk.Box({
+@@ -248,9 +227,7 @@ var Application = GObject.registerClass({
+     }
+ 
+     _sortList(row1, row2) {
+-        let name1 = ExtensionUtils.extensions[row1.uuid].metadata.name;
+-        let name2 = ExtensionUtils.extensions[row2.uuid].metadata.name;
+-        return name1.localeCompare(name2);
++        return row1.name.localeCompare(row2.name);
+     }
+ 
+     _updateHeader(row, before) {
+@@ -269,11 +246,10 @@ var Application = GObject.registerClass({
+     }
+ 
+     _extensionFound(finder, extension) {
+-        let row = new ExtensionRow(extension.uuid);
++        let row = new ExtensionRow(extension);
+ 
+-        row.prefsButton.visible = this._extensionAvailable(row.uuid);
+         row.prefsButton.connect('clicked', () => {
+-            this._selectExtension(row.uuid);
++            this._showPrefs(row.uuid);
+         });
+ 
+         row.show_all();
+@@ -286,8 +262,8 @@ var Application = GObject.registerClass({
+         else
+             this._mainStack.visible_child_name = 'placeholder';
+ 
+-        if (this._startupUuid && this._extensionAvailable(this._startupUuid))
+-            this._selectExtension(this._startupUuid);
++        if (this._startupUuid)
++            this._showPrefs(this._startupUuid);
+         this._startupUuid = null;
+         this._skipMainWindow = false;
+         this._loaded = true;
+@@ -316,11 +292,9 @@ var Application = GObject.registerClass({
+             // Strip off "extension:///" prefix which fakes a URI, if it exists
+             uuid = stripPrefix(uuid, "extension:///");
+ 
+-            if (this._extensionAvailable(uuid))
+-                this._selectExtension(uuid);
+-            else if (!this._loaded)
++            if (!this._loaded)
+                 this._startupUuid = uuid;
+-            else
++            else if (!this._showPrefs(uuid))
+                 this._skipMainWindow = false;
+         }
+         return 0;
+@@ -504,10 +478,11 @@ class DescriptionLabel extends Gtk.Label {
+ 
+ var ExtensionRow = GObject.registerClass(
+ class ExtensionRow extends Gtk.ListBoxRow {
+-    _init(uuid) {
++    _init(extension) {
+         super._init();
+ 
+-        this.uuid = uuid;
++        this._extension = extension;
++        this._prefsModule = null;
+ 
+         this._settings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
+         this._settings.connect('changed::enabled-extensions', () => {
+@@ -525,9 +500,23 @@ class ExtensionRow extends Gtk.ListBoxRow {
+         this._buildUI();
+     }
+ 
+-    _buildUI() {
+-        let extension = ExtensionUtils.extensions[this.uuid];
++    get uuid() {
++        return this._extension.uuid;
++    }
++
++    get name() {
++        return this._extension.metadata.name;
++    }
++
++    get hasPrefs() {
++        return this._extension.hasPrefs;
++    }
+ 
++    get url() {
++        return this._extension.metadata.url;
++    }
++
++    _buildUI() {
+         let hbox = new Gtk.Box({ orientation: Gtk.Orientation.HORIZONTAL,
+                                  hexpand: true, margin_end: 24, spacing: 24,
+                                  margin: 12 });
+@@ -537,19 +526,20 @@ class ExtensionRow extends Gtk.ListBoxRow {
+                                  spacing: 6, hexpand: true });
+         hbox.add(vbox);
+ 
+-        let name = GLib.markup_escape_text(extension.metadata.name, -1);
++        let name = GLib.markup_escape_text(this.name, -1);
+         let label = new Gtk.Label({ label: '<b>' + name + '</b>',
+                                     use_markup: true,
+                                     halign: Gtk.Align.START });
+         vbox.add(label);
+ 
+-        let desc = extension.metadata.description.split('\n')[0];
++        let desc = this._extension.metadata.description.split('\n')[0];
+         label = new DescriptionLabel({ label: desc, wrap: true, lines: 2,
+                                        ellipsize: Pango.EllipsizeMode.END,
+                                        xalign: 0, yalign: 0 });
+         vbox.add(label);
+ 
+         let button = new Gtk.Button({ valign: Gtk.Align.CENTER,
++                                      visible: this.hasPrefs,
+                                       no_show_all: true });
+         button.set_image(new Gtk.Image({ icon_name: 'emblem-system-symbolic',
+                                          icon_size: Gtk.IconSize.BUTTON,
+@@ -573,11 +563,10 @@ class ExtensionRow extends Gtk.ListBoxRow {
+     }
+ 
+     _canEnable() {
+-        let extension = ExtensionUtils.extensions[this.uuid];
+         let checkVersion = !this._settings.get_boolean('disable-extension-version-validation');
+ 
+         return !this._settings.get_boolean('disable-user-extensions') &&
+-               !(checkVersion && ExtensionUtils.isOutOfDate(extension));
++               !(checkVersion && ExtensionUtils.isOutOfDate(this._extension));
+     }
+ 
+     _isEnabled() {
+@@ -605,6 +594,17 @@ class ExtensionRow extends Gtk.ListBoxRow {
+         } while (pos != -1);
+         this._settings.set_strv('enabled-extensions', extensions);
+     }
++
++    get prefsModule() {
++        if (!this._prefsModule) {
++            ExtensionUtils.installImporter(this._extension);
++
++            this._prefsModule = this._extension.imports.prefs;
++            this._prefsModule.init(this._extension.metadata);
++        }
++
++        return this._prefsModule;
++    }
+ });
+ 
+ function initEnvironment() {
+-- 
+2.29.2
+
+
+From 8d80e6667ded38dac53fe245a10191b5d4a3150b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Sat, 6 Jul 2019 01:48:05 +0200
+Subject: [PATCH 10/26] extensionPrefs: Override getCurrentExtension() for
+ extensions
+
+Extensions are used to calling the getCurrentExtension() utility function,
+both from the extension itself and from its preferences. For the latter,
+that relies on the extensions map in ExtensionUtils being populated from
+the separated extension-prefs process just like from gnome-shell.
+
+This won't be the case anymore when we switch to the extensions D-Bus API,
+but as we know which extension we are showing the prefs dialog for, we
+can patch in a simple replacement that gives extensions the expected API.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/extensionPrefs/main.js | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/js/extensionPrefs/main.js b/js/extensionPrefs/main.js
+index 7e7b2dcc7..29de8202a 100644
+--- a/js/extensionPrefs/main.js
++++ b/js/extensionPrefs/main.js
+@@ -599,6 +599,9 @@ class ExtensionRow extends Gtk.ListBoxRow {
+         if (!this._prefsModule) {
+             ExtensionUtils.installImporter(this._extension);
+ 
++            // give extension prefs access to their own extension object
++            ExtensionUtils.getCurrentExtension = () => this._extension;
++
+             this._prefsModule = this._extension.imports.prefs;
+             this._prefsModule.init(this._extension.metadata);
+         }
+-- 
+2.29.2
+
+
+From e03a21b1f768405050bbfda1eb2bbf2ffcf7b4ca Mon Sep 17 00:00:00 2001
+From: Didier Roche <didrocks@ubuntu.com>
+Date: Thu, 1 Nov 2018 13:55:17 +0100
+Subject: [PATCH 11/26] extensionPrefs: Switch to D-Bus API to get extension
+ live state
+
+By direclty using the underlying GSetting, whether or not an extension
+appears as enabled or disabled currently depends only on whether it is
+included in the 'enabled-extensions' list or not.
+
+However this doesn't necessarily reflect the real extension state, as an
+extension may be in error state, or enabled via the session mode.
+
+Switch to the extensions D-Bus API to ensure that the list of extensions
+and each extension's state correctly reflects the state in gnome-shell.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/extensionPrefs/main.js | 166 +++++++++++++++++++++++++-------------
+ 1 file changed, 110 insertions(+), 56 deletions(-)
+
+diff --git a/js/extensionPrefs/main.js b/js/extensionPrefs/main.js
+index 29de8202a..f1b732e85 100644
+--- a/js/extensionPrefs/main.js
++++ b/js/extensionPrefs/main.js
+@@ -8,6 +8,8 @@ const Config = imports.misc.config;
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const { loadInterfaceXML } = imports.misc.fileUtils;
+ 
++const { ExtensionState } = ExtensionUtils;
++
+ const GnomeShellIface = loadInterfaceXML('org.gnome.Shell.Extensions');
+ const GnomeShellProxy = Gio.DBusProxy.makeProxyWrapper(GnomeShellIface);
+ 
+@@ -32,6 +34,11 @@ var Application = GObject.registerClass({
+         this._startupUuid = null;
+         this._loaded = false;
+         this._skipMainWindow = false;
++        this._shellProxy = null;
++    }
++
++    get shellProxy() {
++        return this._shellProxy;
+     }
+ 
+     _showPrefs(uuid) {
+@@ -218,10 +225,8 @@ var Application = GObject.registerClass({
+         this._mainStack.add_named(new EmptyPlaceholder(), 'placeholder');
+ 
+         this._shellProxy = new GnomeShellProxy(Gio.DBus.session, 'org.gnome.Shell', '/org/gnome/Shell');
+-        this._shellProxy.connectSignal('ExtensionStateChanged', (proxy, senderName, [uuid, state]) => {
+-            if (ExtensionUtils.extensions[uuid] !== undefined)
+-                this._scanExtensions();
+-        });
++        this._shellProxy.connectSignal('ExtensionStateChanged',
++            this._onExtensionStateChanged.bind(this));
+ 
+         this._window.show_all();
+     }
+@@ -238,14 +243,51 @@ var Application = GObject.registerClass({
+         row.set_header(sep);
+     }
+ 
++    _findExtensionRow(uuid) {
++        return this._extensionSelector.get_children().find(c => c.uuid === uuid);
++    }
++
++    _onExtensionStateChanged(proxy, senderName, [uuid, newState]) {
++        let row = this._findExtensionRow(uuid);
++        if (row) {
++            let { state } = ExtensionUtils.deserializeExtension(newState);
++            if (state == ExtensionState.UNINSTALLED)
++                row.destroy();
++            return; // we only deal with new and deleted extensions here
++        }
++
++        this._shellProxy.GetExtensionInfoRemote(uuid, ([serialized]) => {
++            let extension = ExtensionUtils.deserializeExtension(serialized);
++            if (!extension)
++                return;
++            // check the extension wasn't added in between
++            if (this._findExtensionRow(uuid) != null)
++                return;
++            this._addExtensionRow(extension);
++        });
++    }
++
+     _scanExtensions() {
+-        let finder = new ExtensionUtils.ExtensionFinder();
+-        finder.connect('extension-found', this._extensionFound.bind(this));
+-        finder.scanExtensions();
+-        this._extensionsLoaded();
++        this._shellProxy.ListExtensionsRemote(([extensionsMap], e) => {
++            if (e) {
++                if (e instanceof Gio.DBusError) {
++                    log(`Failed to connect to shell proxy: ${e}`);
++                    this._mainStack.add_named(new NoShellPlaceholder(), 'noshell');
++                    this._mainStack.visible_child_name = 'noshell';
++                } else
++                    throw e;
++                return;
++            }
++
++            for (let uuid in extensionsMap) {
++                let extension = ExtensionUtils.deserializeExtension(extensionsMap[uuid]);
++                this._addExtensionRow(extension);
++            }
++            this._extensionsLoaded();
++        });
+     }
+ 
+-    _extensionFound(finder, extension) {
++    _addExtensionRow(extension) {
+         let row = new ExtensionRow(extension);
+ 
+         row.prefsButton.connect('clicked', () => {
+@@ -466,6 +508,35 @@ class EmptyPlaceholder extends Gtk.Box {
+     }
+ });
+ 
++var NoShellPlaceholder = GObject.registerClass(
++class NoShellPlaceholder extends Gtk.Box {
++    _init() {
++        super._init({
++            orientation: Gtk.Orientation.VERTICAL,
++            spacing: 12,
++            margin: 100,
++            margin_bottom: 60
++        });
++
++        let label = new Gtk.Label({
++            label: '<span size="x-large">%s</span>'.format(
++                _("Something’s gone wrong")),
++            use_markup: true
++        });
++        label.get_style_context().add_class(Gtk.STYLE_CLASS_DIM_LABEL);
++        this.add(label);
++
++        label = new Gtk.Label({
++            label: _("We’re very sorry, but it was not possible to get the list of installed extensions. Make sure you are logged into GNOME and try again."),
++            justify: Gtk.Justification.CENTER,
++            wrap: true
++        });
++        this.add(label);
++
++        this.show_all();
++    }
++});
++
+ var DescriptionLabel = GObject.registerClass(
+ class DescriptionLabel extends Gtk.Label {
+     vfunc_get_preferred_height_for_width(width) {
+@@ -481,22 +552,23 @@ class ExtensionRow extends Gtk.ListBoxRow {
+     _init(extension) {
+         super._init();
+ 
++        this._app = Gio.Application.get_default();
+         this._extension = extension;
+         this._prefsModule = null;
+ 
+-        this._settings = new Gio.Settings({ schema_id: 'org.gnome.shell' });
+-        this._settings.connect('changed::enabled-extensions', () => {
+-            this._switch.state = this._isEnabled();
+-        });
+-        this._settings.connect('changed::disable-extension-version-validation',
+-            () => {
+-                this._switch.sensitive = this._canEnable();
+-            });
+-        this._settings.connect('changed::disable-user-extensions',
+-            () => {
+-                this._switch.sensitive = this._canEnable();
++        this._extensionStateChangedId = this._app.shellProxy.connectSignal(
++            'ExtensionStateChanged', (p, sender, [uuid, newState]) => {
++                if (this.uuid !== uuid)
++                    return;
++
++                this._extension = ExtensionUtils.deserializeExtension(newState);
++                let state = (this._extension.state == ExtensionState.ENABLED);
++                this._switch.state = state;
++                this._switch.sensitive = this._canToggle();
+             });
+ 
++        this.connect('destroy', this._onDestroy.bind(this));
++
+         this._buildUI();
+     }
+ 
+@@ -516,6 +588,15 @@ class ExtensionRow extends Gtk.ListBoxRow {
+         return this._extension.metadata.url;
+     }
+ 
++    _onDestroy() {
++        if (!this._app.shellProxy)
++            return;
++
++        if (this._extensionStateChangedId)
++            this._app.shellProxy.disconnectSignal(this._extensionStateChangedId);
++        this._extensionStateChangedId = 0;
++    }
++
+     _buildUI() {
+         let hbox = new Gtk.Box({ orientation: Gtk.Orientation.HORIZONTAL,
+                                  hexpand: true, margin_end: 24, spacing: 24,
+@@ -549,50 +630,23 @@ class ExtensionRow extends Gtk.ListBoxRow {
+ 
+         this.prefsButton = button;
+ 
+-        this._switch = new Gtk.Switch({ valign: Gtk.Align.CENTER,
+-                                        sensitive: this._canEnable(),
+-                                        state: this._isEnabled() });
++        this._switch = new Gtk.Switch({
++            valign: Gtk.Align.CENTER,
++            sensitive: this._canToggle(),
++            state: this._extension.state === ExtensionState.ENABLED
++        });
+         this._switch.connect('notify::active', () => {
+             if (this._switch.active)
+-                this._enable();
++                this._app.shellProxy.EnableExtensionRemote(this.uuid);
+             else
+-                this._disable();
++                this._app.shellProxy.DisableExtensionRemote(this.uuid);
+         });
+         this._switch.connect('state-set', () => true);
+         hbox.add(this._switch);
+     }
+ 
+-    _canEnable() {
+-        let checkVersion = !this._settings.get_boolean('disable-extension-version-validation');
+-
+-        return !this._settings.get_boolean('disable-user-extensions') &&
+-               !(checkVersion && ExtensionUtils.isOutOfDate(this._extension));
+-    }
+-
+-    _isEnabled() {
+-        let extensions = this._settings.get_strv('enabled-extensions');
+-        return extensions.indexOf(this.uuid) != -1;
+-    }
+-
+-    _enable() {
+-        let extensions = this._settings.get_strv('enabled-extensions');
+-        if (extensions.indexOf(this.uuid) != -1)
+-            return;
+-
+-        extensions.push(this.uuid);
+-        this._settings.set_strv('enabled-extensions', extensions);
+-    }
+-
+-    _disable() {
+-        let extensions = this._settings.get_strv('enabled-extensions');
+-        let pos = extensions.indexOf(this.uuid);
+-        if (pos == -1)
+-            return;
+-        do {
+-            extensions.splice(pos, 1);
+-            pos = extensions.indexOf(this.uuid);
+-        } while (pos != -1);
+-        this._settings.set_strv('enabled-extensions', extensions);
++    _canToggle() {
++        return this._extension.canChange;
+     }
+ 
+     get prefsModule() {
+-- 
+2.29.2
+
+
+From 9baf77dcae765618902d958549801276156f1255 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Sun, 7 Jul 2019 23:38:27 +0200
+Subject: [PATCH 12/26] extensionSystem: Move extension loading into
+ ExtensionManager
+
+Now that extension loading and the extensions map are no longer shared
+between the gnome-shell and gnome-shell-extension-prefs processes, we
+can move both into the ExtensionManager which makes much more sense
+conceptually.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/misc/extensionUtils.js    |  95 ++----------------------------
+ js/ui/extensionDownloader.js |  12 ++--
+ js/ui/extensionSystem.js     | 110 +++++++++++++++++++++++++++++------
+ js/ui/lookingGlass.js        |   4 +-
+ js/ui/main.js                |   1 +
+ js/ui/shellDBus.js           |   8 +--
+ 6 files changed, 111 insertions(+), 119 deletions(-)
+
+diff --git a/js/misc/extensionUtils.js b/js/misc/extensionUtils.js
+index 025cd042e..c513ebc06 100644
+--- a/js/misc/extensionUtils.js
++++ b/js/misc/extensionUtils.js
+@@ -7,10 +7,8 @@ const { Gio, GLib } = imports.gi;
+ 
+ const Gettext = imports.gettext;
+ const Lang = imports.lang;
+-const Signals = imports.signals;
+ 
+ const Config = imports.misc.config;
+-const FileUtils = imports.misc.fileUtils;
+ 
+ var ExtensionType = {
+     SYSTEM: 1,
+@@ -33,9 +31,6 @@ var ExtensionState = {
+ 
+ const SERIALIZED_PROPERTIES = ['type', 'state', 'path', 'error', 'hasPrefs', 'canChange'];
+ 
+-// Maps uuid -> metadata object
+-var extensions = {};
+-
+ /**
+  * getCurrentExtension:
+  *
+@@ -66,13 +61,17 @@ function getCurrentExtension() {
+     if (!match)
+         return null;
+ 
++    // local import, as the module is used from outside the gnome-shell process
++    // as well (not this function though)
++    let extensionManager = imports.ui.main.extensionManager;
++
+     let path = match[1];
+     let file = Gio.File.new_for_path(path);
+ 
+     // Walk up the directory tree, looking for an extension with
+     // the same UUID as a directory name.
+     while (file != null) {
+-        let extension = extensions[file.get_basename()];
++        let extension = extensionManager.extensions[file.get_basename()];
+         if (extension !== undefined)
+             return extension;
+         file = file.get_parent();
+@@ -178,57 +177,6 @@ function isOutOfDate(extension) {
+     return false;
+ }
+ 
+-function createExtensionObject(uuid, dir, type) {
+-    let info;
+-
+-    let metadataFile = dir.get_child('metadata.json');
+-    if (!metadataFile.query_exists(null)) {
+-        throw new Error('Missing metadata.json');
+-    }
+-
+-    let metadataContents, success, tag;
+-    try {
+-        [success, metadataContents, tag] = metadataFile.load_contents(null);
+-        if (metadataContents instanceof Uint8Array)
+-            metadataContents = imports.byteArray.toString(metadataContents);
+-    } catch (e) {
+-        throw new Error('Failed to load metadata.json: ' + e);
+-    }
+-    let meta;
+-    try {
+-        meta = JSON.parse(metadataContents);
+-    } catch (e) {
+-        throw new Error('Failed to parse metadata.json: ' + e);
+-    }
+-
+-    let requiredProperties = ['uuid', 'name', 'description', 'shell-version'];
+-    for (let i = 0; i < requiredProperties.length; i++) {
+-        let prop = requiredProperties[i];
+-        if (!meta[prop]) {
+-            throw new Error('missing "' + prop + '" property in metadata.json');
+-        }
+-    }
+-
+-    if (uuid != meta.uuid) {
+-        throw new Error('uuid "' + meta.uuid + '" from metadata.json does not match directory name "' + uuid + '"');
+-    }
+-
+-    let extension = {};
+-
+-    extension.metadata = meta;
+-    extension.uuid = meta.uuid;
+-    extension.type = type;
+-    extension.dir = dir;
+-    extension.path = dir.get_path();
+-    extension.error = '';
+-    extension.hasPrefs = dir.get_child('prefs.js').query_exists(null);
+-    extension.canChange = false;
+-
+-    extensions[uuid] = extension;
+-
+-    return extension;
+-}
+-
+ function serializeExtension(extension) {
+     let obj = {};
+     Lang.copyProperties(extension.metadata, obj);
+@@ -283,36 +231,3 @@ function installImporter(extension) {
+     extension.imports = imports[extension.uuid];
+     imports.searchPath = oldSearchPath;
+ }
+-
+-var ExtensionFinder = class {
+-    _loadExtension(extensionDir, info, perUserDir) {
+-        let fileType = info.get_file_type();
+-        if (fileType != Gio.FileType.DIRECTORY)
+-            return;
+-        let uuid = info.get_name();
+-        let existing = extensions[uuid];
+-        if (existing) {
+-            log('Extension %s already installed in %s. %s will not be loaded'.format(uuid, existing.path, extensionDir.get_path()));
+-            return;
+-        }
+-
+-        let extension;
+-        let type = extensionDir.has_prefix(perUserDir) ? ExtensionType.PER_USER
+-                                                       : ExtensionType.SYSTEM;
+-        try {
+-            extension = createExtensionObject(uuid, extensionDir, type);
+-        } catch(e) {
+-            logError(e, 'Could not load extension %s'.format(uuid));
+-            return;
+-        }
+-        this.emit('extension-found', extension);
+-    }
+-
+-    scanExtensions() {
+-        let perUserDir = Gio.File.new_for_path(global.userdatadir);
+-        FileUtils.collectFromDatadirs('extensions', true, (dir, info) => {
+-            this._loadExtension(dir, info, perUserDir);
+-        });
+-    }
+-};
+-Signals.addSignalMethods(ExtensionFinder.prototype);
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index de52edfa6..1d92a5740 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -43,7 +43,7 @@ function installExtension(uuid, invocation) {
+ }
+ 
+ function uninstallExtension(uuid) {
+-    let extension = ExtensionUtils.extensions[uuid];
++    let extension = Main.extensionManager.extensions[uuid];
+     if (!extension)
+         return false;
+ 
+@@ -112,7 +112,7 @@ function updateExtension(uuid) {
+ 
+     _httpSession.queue_message(message, (session, message) => {
+         gotExtensionZipFile(session, message, uuid, newExtensionTmpDir, () => {
+-            let oldExtension = ExtensionUtils.extensions[uuid];
++            let oldExtension = Main.extensionManager.extensions[uuid];
+             let extensionDir = oldExtension.dir;
+ 
+             if (!Main.extensionManager.unloadExtension(oldExtension))
+@@ -124,7 +124,7 @@ function updateExtension(uuid) {
+             let extension = null;
+ 
+             try {
+-                extension = ExtensionUtils.createExtensionObject(uuid, extensionDir, ExtensionUtils.ExtensionType.PER_USER);
++                extension = Main.extensionManager.createExtensionObject(uuid, extensionDir, ExtensionUtils.ExtensionType.PER_USER);
+                 Main.extensionManager.loadExtension(extension);
+             } catch(e) {
+                 if (extension)
+@@ -150,8 +150,8 @@ function updateExtension(uuid) {
+ 
+ function checkForUpdates() {
+     let metadatas = {};
+-    for (let uuid in ExtensionUtils.extensions) {
+-        metadatas[uuid] = ExtensionUtils.extensions[uuid].metadata;
++    for (let uuid in Main.extensionManager.extensions) {
++        metadatas[uuid] = Main.extensionManager.extensions[uuid].metadata;
+     }
+ 
+     let params = { shell_version: Config.PACKAGE_VERSION,
+@@ -229,7 +229,7 @@ class InstallExtensionDialog extends ModalDialog.ModalDialog {
+ 
+         function callback() {
+             try {
+-                let extension = ExtensionUtils.createExtensionObject(uuid, dir, ExtensionUtils.ExtensionType.PER_USER);
++                let extension = Main.extensionManager.createExtensionObject(uuid, dir, ExtensionUtils.ExtensionType.PER_USER);
+                 Main.extensionManager.loadExtension(extension);
+                 if (!Main.extensionManager.enableExtension(uuid))
+                     throw new Error(`Cannot add ${uuid} to enabled extensions gsettings key`);
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index a83e53c83..0fd49c5ca 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -4,9 +4,10 @@ const { Gio, St } = imports.gi;
+ const Signals = imports.signals;
+ 
+ const ExtensionUtils = imports.misc.extensionUtils;
++const FileUtils = imports.misc.fileUtils;
+ const Main = imports.ui.main;
+ 
+-const { ExtensionState } = ExtensionUtils;
++const { ExtensionState, ExtensionType } = ExtensionUtils;
+ 
+ const ENABLED_EXTENSIONS_KEY = 'enabled-extensions';
+ const DISABLE_USER_EXTENSIONS_KEY = 'disable-user-extensions';
+@@ -17,15 +18,23 @@ var ExtensionManager = class {
+         this._initted = false;
+         this._enabled = false;
+ 
++        this._extensions = {};
+         this._enabledExtensions = [];
+         this._extensionOrder = [];
+ 
+         Main.sessionMode.connect('updated', this._sessionUpdated.bind(this));
++    }
++
++    init() {
+         this._sessionUpdated();
+     }
+ 
++    get extensions() {
++        return this._extensions;
++    }
++
+     _callExtensionDisable(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
++        let extension = this._extensions[uuid];
+         if (!extension)
+             return;
+ 
+@@ -47,7 +56,7 @@ var ExtensionManager = class {
+         for (let i = 0; i < orderReversed.length; i++) {
+             let uuid = orderReversed[i];
+             try {
+-                ExtensionUtils.extensions[uuid].stateObj.disable();
++                this._extensions[uuid].stateObj.disable();
+             } catch (e) {
+                 this.logExtensionError(uuid, e);
+             }
+@@ -68,7 +77,7 @@ var ExtensionManager = class {
+         for (let i = 0; i < order.length; i++) {
+             let uuid = order[i];
+             try {
+-                ExtensionUtils.extensions[uuid].stateObj.enable();
++                this._extensions[uuid].stateObj.enable();
+             } catch (e) {
+                 this.logExtensionError(uuid, e);
+             }
+@@ -83,7 +92,7 @@ var ExtensionManager = class {
+     }
+ 
+     _callExtensionEnable(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
++        let extension = this._extensions[uuid];
+         if (!extension)
+             return;
+ 
+@@ -127,7 +136,7 @@ var ExtensionManager = class {
+     }
+ 
+     enableExtension(uuid) {
+-        if (!ExtensionUtils.extensions[uuid])
++        if (!this._extensions[uuid])
+             return false;
+ 
+         let enabledExtensions = global.settings.get_strv(ENABLED_EXTENSIONS_KEY);
+@@ -140,7 +149,7 @@ var ExtensionManager = class {
+     }
+ 
+     disableExtension(uuid) {
+-        if (!ExtensionUtils.extensions[uuid])
++        if (!this._extensions[uuid])
+             return false;
+ 
+         let enabledExtensions = global.settings.get_strv(ENABLED_EXTENSIONS_KEY);
+@@ -153,7 +162,7 @@ var ExtensionManager = class {
+     }
+ 
+     logExtensionError(uuid, error) {
+-        let extension = ExtensionUtils.extensions[uuid];
++        let extension = this._extensions[uuid];
+         if (!extension)
+             return;
+ 
+@@ -169,6 +178,54 @@ var ExtensionManager = class {
+         this.emit('extension-state-changed', extension);
+     }
+ 
++    createExtensionObject(uuid, dir, type) {
++        let metadataFile = dir.get_child('metadata.json');
++        if (!metadataFile.query_exists(null)) {
++            throw new Error('Missing metadata.json');
++        }
++
++        let metadataContents, success;
++        try {
++            [success, metadataContents] = metadataFile.load_contents(null);
++            if (metadataContents instanceof Uint8Array)
++                metadataContents = imports.byteArray.toString(metadataContents);
++        } catch (e) {
++            throw new Error(`Failed to load metadata.json: ${e}`);
++        }
++        let meta;
++        try {
++            meta = JSON.parse(metadataContents);
++        } catch (e) {
++            throw new Error(`Failed to parse metadata.json: ${e}`);
++        }
++
++        let requiredProperties = ['uuid', 'name', 'description', 'shell-version'];
++        for (let i = 0; i < requiredProperties.length; i++) {
++            let prop = requiredProperties[i];
++            if (!meta[prop]) {
++                throw new Error(`missing "${prop}" property in metadata.json`);
++            }
++        }
++
++        if (uuid != meta.uuid) {
++            throw new Error(`uuid "${meta.uuid}" from metadata.json does not match directory name "${uuid}"`);
++        }
++
++        let extension = {
++            metadata: meta,
++            uuid: meta.uuid,
++            type,
++            dir,
++            path: dir.get_path(),
++            error: '',
++            hasPrefs: dir.get_child('prefs.js').query_exists(null),
++            canChange: false
++        };
++        this._extensions[uuid] = extension;
++
++        return extension;
++    }
++
+     loadExtension(extension) {
+         // Default to error, we set success as the last step
+         extension.state = ExtensionState.ERROR;
+@@ -202,7 +259,7 @@ var ExtensionManager = class {
+         extension.state = ExtensionState.UNINSTALLED;
+         this.emit('extension-state-changed', extension);
+ 
+-        delete ExtensionUtils.extensions[extension.uuid];
++        delete this._extensions[extension.uuid];
+         return true;
+     }
+ 
+@@ -217,7 +274,7 @@ var ExtensionManager = class {
+         // Now, recreate the extension and load it.
+         let newExtension;
+         try {
+-            newExtension = ExtensionUtils.createExtensionObject(uuid, dir, type);
++            newExtension = this.createExtensionObject(uuid, dir, type);
+         } catch (e) {
+             this.logExtensionError(uuid, e);
+             return;
+@@ -227,7 +284,7 @@ var ExtensionManager = class {
+     }
+ 
+     _callExtensionInit(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
++        let extension = this._extensions[uuid];
+         let dir = extension.dir;
+ 
+         if (!extension)
+@@ -328,7 +385,7 @@ var ExtensionManager = class {
+     }
+ 
+     _onSettingsWritableChanged() {
+-        for (let uuid in ExtensionUtils.extensions) {
++        for (let uuid in this._extensions) {
+             let extension = ExtensionUtils.extensions[uuid];
+             this._updateCanChange(extension);
+             this.emit('extension-state-changed', extension);
+@@ -340,8 +397,8 @@ var ExtensionManager = class {
+         // extensions when allowed by the sessionMode, so
+         // temporarily disable them all
+         this._enabledExtensions = [];
+-        for (let uuid in ExtensionUtils.extensions)
+-            this.reloadExtension(ExtensionUtils.extensions[uuid]);
++        for (let uuid in this._extensions)
++            this.reloadExtension(this._extensions[uuid]);
+         this._enabledExtensions = this._getEnabledExtensions();
+ 
+         if (Main.sessionMode.allowExtensions) {
+@@ -363,11 +420,30 @@ var ExtensionManager = class {
+ 
+         this._enabledExtensions = this._getEnabledExtensions();
+ 
+-        let finder = new ExtensionUtils.ExtensionFinder();
+-        finder.connect('extension-found', (finder, extension) => {
++        let perUserDir = Gio.File.new_for_path(global.userdatadir);
++        FileUtils.collectFromDatadirs('extensions', true, (dir, info) => {
++            let fileType = info.get_file_type();
++            if (fileType != Gio.FileType.DIRECTORY)
++                return;
++            let uuid = info.get_name();
++            let existing = this._extensions[uuid];
++            if (existing) {
++                log(`Extension ${uuid} already installed in ${existing.path}. ${dir.get_path()} will not be loaded`);
++                return;
++            }
++
++            let extension;
++            let type = dir.has_prefix(perUserDir)
++                ? ExtensionType.PER_USER
++                : ExtensionType.SYSTEM;
++            try {
++                extension = this.createExtensionObject(uuid, dir, type);
++            } catch (e) {
++                logError(e, `Could not load extension ${uuid}`);
++                return;
++            }
+             this.loadExtension(extension);
+         });
+-        finder.scanExtensions();
+     }
+ 
+     _enableAllExtensions() {
+diff --git a/js/ui/lookingGlass.js b/js/ui/lookingGlass.js
+index e947574f2..b8f8b14c9 100644
+--- a/js/ui/lookingGlass.js
++++ b/js/ui/lookingGlass.js
+@@ -620,7 +620,7 @@ var Extensions = class Extensions {
+         this._extensionsList.add(this._noExtensions);
+         this.actor.add(this._extensionsList);
+ 
+-        for (let uuid in ExtensionUtils.extensions)
++        for (let uuid in Main.extensionManager.extensions)
+             this._loadExtension(null, uuid);
+ 
+         Main.extensionManager.connect('extension-loaded',
+@@ -628,7 +628,7 @@ var Extensions = class Extensions {
+     }
+ 
+     _loadExtension(o, uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
++        let extension = Main.extensionManager.extensions[uuid];
+         // There can be cases where we create dummy extension metadata
+         // that's not really a proper extension. Don't bother with these.
+         if (!extension.metadata.name)
+diff --git a/js/ui/main.js b/js/ui/main.js
+index 7bfbce497..5fa5a8077 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -220,6 +220,7 @@ function _initializeUI() {
+ 
+     ExtensionDownloader.init();
+     extensionManager = new ExtensionSystem.ExtensionManager();
++    extensionManager.init();
+ 
+     if (sessionMode.isGreeter && screenShield) {
+         layoutManager.connect('startup-prepared', () => {
+diff --git a/js/ui/shellDBus.js b/js/ui/shellDBus.js
+index 23274c0a3..dc3a61df6 100644
+--- a/js/ui/shellDBus.js
++++ b/js/ui/shellDBus.js
+@@ -254,7 +254,7 @@ var GnomeShellExtensions = class {
+ 
+     ListExtensions() {
+         let out = {};
+-        for (let uuid in ExtensionUtils.extensions) {
++        for (let uuid in Main.extensionManager.extensions) {
+             let dbusObj = this.GetExtensionInfo(uuid);
+             out[uuid] = dbusObj;
+         }
+@@ -262,12 +262,12 @@ var GnomeShellExtensions = class {
+     }
+ 
+     GetExtensionInfo(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid] || {};
++        let extension = Main.extensionManager.extensions[uuid] || {};
+         return ExtensionUtils.serializeExtension(extension);
+     }
+ 
+     GetExtensionErrors(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
++        let extension = Main.extensionManager.extensions[uuid];
+         if (!extension)
+             return [];
+ 
+@@ -303,7 +303,7 @@ var GnomeShellExtensions = class {
+     }
+ 
+     ReloadExtension(uuid) {
+-        let extension = ExtensionUtils.extensions[uuid];
++        let extension = Main.extensionManager.extensions[uuid];
+         if (!extension)
+             return;
+ 
+-- 
+2.29.2
+
+
+From 776b82542aa705ea527dfbdd1a6d3fb1588092e2 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 8 Jul 2019 00:01:11 +0200
+Subject: [PATCH 13/26] extensionSystem: Store extensions in a Map
+
+After making the extensions map private to the ExtensionManager, we can
+switch it to a proper hash table which is more appropriate.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=789852
+---
+ js/misc/extensionUtils.js    |  2 +-
+ js/ui/extensionDownloader.js |  8 +++----
+ js/ui/extensionSystem.js     | 42 ++++++++++++++++++++----------------
+ js/ui/lookingGlass.js        |  5 +++--
+ js/ui/shellDBus.js           | 10 ++++-----
+ 5 files changed, 37 insertions(+), 30 deletions(-)
+
+diff --git a/js/misc/extensionUtils.js b/js/misc/extensionUtils.js
+index c513ebc06..62b25d46c 100644
+--- a/js/misc/extensionUtils.js
++++ b/js/misc/extensionUtils.js
+@@ -71,7 +71,7 @@ function getCurrentExtension() {
+     // Walk up the directory tree, looking for an extension with
+     // the same UUID as a directory name.
+     while (file != null) {
+-        let extension = extensionManager.extensions[file.get_basename()];
++        let extension = extensionManager.lookup(file.get_basename());
+         if (extension !== undefined)
+             return extension;
+         file = file.get_parent();
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index 1d92a5740..77d013ffb 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -43,7 +43,7 @@ function installExtension(uuid, invocation) {
+ }
+ 
+ function uninstallExtension(uuid) {
+-    let extension = Main.extensionManager.extensions[uuid];
++    let extension = Main.extensionManager.lookup(uuid);
+     if (!extension)
+         return false;
+ 
+@@ -112,7 +112,7 @@ function updateExtension(uuid) {
+ 
+     _httpSession.queue_message(message, (session, message) => {
+         gotExtensionZipFile(session, message, uuid, newExtensionTmpDir, () => {
+-            let oldExtension = Main.extensionManager.extensions[uuid];
++            let oldExtension = Main.extensionManager.lookup(uuid);
+             let extensionDir = oldExtension.dir;
+ 
+             if (!Main.extensionManager.unloadExtension(oldExtension))
+@@ -150,9 +150,9 @@ function updateExtension(uuid) {
+ 
+ function checkForUpdates() {
+     let metadatas = {};
+-    for (let uuid in Main.extensionManager.extensions) {
++    Main.extensionManager.getUuids().forEach(uuid => {
+         metadatas[uuid] = Main.extensionManager.extensions[uuid].metadata;
+-    }
++    });
+ 
+     let params = { shell_version: Config.PACKAGE_VERSION,
+                    installed: JSON.stringify(metadatas) };
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 0fd49c5ca..cd3e78301 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -18,7 +18,7 @@ var ExtensionManager = class {
+         this._initted = false;
+         this._enabled = false;
+ 
+-        this._extensions = {};
++        this._extensions = new Map();
+         this._enabledExtensions = [];
+         this._extensionOrder = [];
+ 
+@@ -29,12 +29,16 @@ var ExtensionManager = class {
+         this._sessionUpdated();
+     }
+ 
+-    get extensions() {
+-        return this._extensions;
++    lookup(uuid) {
++        return this._extensions.get(uuid);
++    }
++
++    getUuids() {
++        return [...this._extensions.keys()];
+     }
+ 
+     _callExtensionDisable(uuid) {
+-        let extension = this._extensions[uuid];
++        let extension = this.lookup(uuid);
+         if (!extension)
+             return;
+ 
+@@ -56,7 +60,7 @@ var ExtensionManager = class {
+         for (let i = 0; i < orderReversed.length; i++) {
+             let uuid = orderReversed[i];
+             try {
+-                this._extensions[uuid].stateObj.disable();
++                this.lookup(uuid).stateObj.disable();
+             } catch (e) {
+                 this.logExtensionError(uuid, e);
+             }
+@@ -77,7 +81,7 @@ var ExtensionManager = class {
+         for (let i = 0; i < order.length; i++) {
+             let uuid = order[i];
+             try {
+-                this._extensions[uuid].stateObj.enable();
++                this.lookup(uuid).stateObj.enable();
+             } catch (e) {
+                 this.logExtensionError(uuid, e);
+             }
+@@ -92,7 +96,7 @@ var ExtensionManager = class {
+     }
+ 
+     _callExtensionEnable(uuid) {
+-        let extension = this._extensions[uuid];
++        let extension = this.lookup(uuid);
+         if (!extension)
+             return;
+ 
+@@ -136,7 +140,7 @@ var ExtensionManager = class {
+     }
+ 
+     enableExtension(uuid) {
+-        if (!this._extensions[uuid])
++        if (!this._extensions.has(uuid))
+             return false;
+ 
+         let enabledExtensions = global.settings.get_strv(ENABLED_EXTENSIONS_KEY);
+@@ -149,7 +153,7 @@ var ExtensionManager = class {
+     }
+ 
+     disableExtension(uuid) {
+-        if (!this._extensions[uuid])
++        if (!this._extensions.has(uuid))
+             return false;
+ 
+         let enabledExtensions = global.settings.get_strv(ENABLED_EXTENSIONS_KEY);
+@@ -162,7 +166,7 @@ var ExtensionManager = class {
+     }
+ 
+     logExtensionError(uuid, error) {
+-        let extension = this._extensions[uuid];
++        let extension = this.lookup(uuid);
+         if (!extension)
+             return;
+ 
+@@ -221,7 +225,7 @@ var ExtensionManager = class {
+             hasPrefs: dir.get_child('prefs.js').query_exists(null),
+             canChange: false
+         };
+-        this._extensions[uuid] = extension;
++        this._extensions.set(uuid, extension);
+ 
+         return extension;
+     }
+@@ -259,7 +263,7 @@ var ExtensionManager = class {
+         extension.state = ExtensionState.UNINSTALLED;
+         this.emit('extension-state-changed', extension);
+ 
+-        delete this._extensions[extension.uuid];
++        this._extensions.delete(extension.uuid);
+         return true;
+     }
+ 
+@@ -284,7 +288,7 @@ var ExtensionManager = class {
+     }
+ 
+     _callExtensionInit(uuid) {
+-        let extension = this._extensions[uuid];
++        let extension = this.lookup(uuid);
+         let dir = extension.dir;
+ 
+         if (!extension)
+@@ -385,8 +389,7 @@ var ExtensionManager = class {
+     }
+ 
+     _onSettingsWritableChanged() {
+-        for (let uuid in this._extensions) {
+-            let extension = ExtensionUtils.extensions[uuid];
++        for (let extension of this._extensions.values()) {
+             this._updateCanChange(extension);
+             this.emit('extension-state-changed', extension);
+         }
+@@ -397,8 +400,11 @@ var ExtensionManager = class {
+         // extensions when allowed by the sessionMode, so
+         // temporarily disable them all
+         this._enabledExtensions = [];
+-        for (let uuid in this._extensions)
+-            this.reloadExtension(this._extensions[uuid]);
++
++        // The loop modifies the extensions map, so iterate over a copy
++        let extensions = [...this._extensions.values()];
++        for (let extension of extensions)
++            this.reloadExtension(extension);
+         this._enabledExtensions = this._getEnabledExtensions();
+ 
+         if (Main.sessionMode.allowExtensions) {
+@@ -426,7 +432,7 @@ var ExtensionManager = class {
+             if (fileType != Gio.FileType.DIRECTORY)
+                 return;
+             let uuid = info.get_name();
+-            let existing = this._extensions[uuid];
++            let existing = this.lookup(uuid);
+             if (existing) {
+                 log(`Extension ${uuid} already installed in ${existing.path}. ${dir.get_path()} will not be loaded`);
+                 return;
+diff --git a/js/ui/lookingGlass.js b/js/ui/lookingGlass.js
+index b8f8b14c9..9196959bd 100644
+--- a/js/ui/lookingGlass.js
++++ b/js/ui/lookingGlass.js
+@@ -620,15 +620,16 @@ var Extensions = class Extensions {
+         this._extensionsList.add(this._noExtensions);
+         this.actor.add(this._extensionsList);
+ 
+-        for (let uuid in Main.extensionManager.extensions)
++        Main.extensionManager.getUuids().forEach(uuid => {
+             this._loadExtension(null, uuid);
++        });
+ 
+         Main.extensionManager.connect('extension-loaded',
+                                       this._loadExtension.bind(this));
+     }
+ 
+     _loadExtension(o, uuid) {
+-        let extension = Main.extensionManager.extensions[uuid];
++        let extension = Main.extensionManager.lookup(uuid);
+         // There can be cases where we create dummy extension metadata
+         // that's not really a proper extension. Don't bother with these.
+         if (!extension.metadata.name)
+diff --git a/js/ui/shellDBus.js b/js/ui/shellDBus.js
+index dc3a61df6..be9b10491 100644
+--- a/js/ui/shellDBus.js
++++ b/js/ui/shellDBus.js
+@@ -254,20 +254,20 @@ var GnomeShellExtensions = class {
+ 
+     ListExtensions() {
+         let out = {};
+-        for (let uuid in Main.extensionManager.extensions) {
++        Main.extensionManager.getUuids().forEach(uuid => {
+             let dbusObj = this.GetExtensionInfo(uuid);
+             out[uuid] = dbusObj;
+-        }
++        });
+         return out;
+     }
+ 
+     GetExtensionInfo(uuid) {
+-        let extension = Main.extensionManager.extensions[uuid] || {};
++        let extension = Main.extensionManager.lookup(uuid) || {};
+         return ExtensionUtils.serializeExtension(extension);
+     }
+ 
+     GetExtensionErrors(uuid) {
+-        let extension = Main.extensionManager.extensions[uuid];
++        let extension = Main.extensionManager.lookup(uuid);
+         if (!extension)
+             return [];
+ 
+@@ -303,7 +303,7 @@ var GnomeShellExtensions = class {
+     }
+ 
+     ReloadExtension(uuid) {
+-        let extension = Main.extensionManager.extensions[uuid];
++        let extension = Main.extensionManager.lookup(uuid);
+         if (!extension)
+             return;
+ 
+-- 
+2.29.2
+
+
+From 2cc95ba7c93c04bae0006b7d018928600d9cbb13 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 22 Jan 2020 14:45:15 +0100
+Subject: [PATCH 14/26] extensionSystem: Add hasUpdate state
+
+The current support for extension updates is half-baked at best.
+We are about to change that, and implement offline updates similar
+to gnome-software.
+
+As a first step, add a hasUpdate property to the extension state
+which will communicate available updates.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/945
+---
+ js/misc/extensionUtils.js | 10 +++++++++-
+ js/ui/extensionSystem.js  | 10 ++++++++++
+ 2 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/js/misc/extensionUtils.js b/js/misc/extensionUtils.js
+index 62b25d46c..a812acdb1 100644
+--- a/js/misc/extensionUtils.js
++++ b/js/misc/extensionUtils.js
+@@ -29,7 +29,15 @@ var ExtensionState = {
+     UNINSTALLED: 99
+ };
+ 
+-const SERIALIZED_PROPERTIES = ['type', 'state', 'path', 'error', 'hasPrefs', 'canChange'];
++const SERIALIZED_PROPERTIES = [
++    'type',
++    'state',
++    'path',
++    'error',
++    'hasPrefs',
++    'hasUpdate',
++    'canChange',
++];
+ 
+ /**
+  * getCurrentExtension:
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index cd3e78301..93faf48d4 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -165,6 +165,15 @@ var ExtensionManager = class {
+         return true;
+     }
+ 
++    notifyExtensionUpdate(uuid) {
++        let extension = this.lookup(uuid);
++        if (!extension)
++            return;
++
++        extension.hasUpdate = true;
++        this.emit('extension-state-changed', extension);
++    }
++
+     logExtensionError(uuid, error) {
+         let extension = this.lookup(uuid);
+         if (!extension)
+@@ -223,6 +232,7 @@ var ExtensionManager = class {
+             path: dir.get_path(),
+             error: '',
+             hasPrefs: dir.get_child('prefs.js').query_exists(null),
++            hasUpdate: false,
+             canChange: false
+         };
+         this._extensions.set(uuid, extension);
+-- 
+2.29.2
+
+
+From 07330eaac64fc115851ec9d5a0969bd046599e12 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 22 Jan 2020 15:07:45 +0100
+Subject: [PATCH 15/26] extensionDownloader: Make checkForUpdates() check for
+ updates
+
+Currently the method installs updates instead of merely checking for
+them (or it would do, if it actually worked).
+
+This is not just surprising considering the method name, the whole idea
+of live updates is problematic and will not work properly more often
+than not:
+ - imports are cached, so any local modules will stay at their
+   original version until a shell restart
+ - GTypes cannot be unregistered
+
+So change the method to only download available updates, and set the
+extensions' hasUpdate state accordingly.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/945
+---
+ js/ui/extensionDownloader.js | 51 +++++++-----------------------------
+ 1 file changed, 9 insertions(+), 42 deletions(-)
+
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index 77d013ffb..66cb13d56 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -97,53 +97,20 @@ function gotExtensionZipFile(session, message, uuid, dir, callback, errback) {
+     });
+ }
+ 
+-function updateExtension(uuid) {
+-    // This gets a bit tricky. We want the update to be seamless -
+-    // if we have any error during downloading or extracting, we
+-    // want to not unload the current version.
+-
+-    let oldExtensionTmpDir = GLib.Dir.make_tmp('XXXXXX-shell-extension');
+-    let newExtensionTmpDir = GLib.Dir.make_tmp('XXXXXX-shell-extension');
++function downloadExtensionUpdate(uuid) {
++    let dir = Gio.File.new_for_path(
++        GLib.build_filenamev([global.userdatadir, 'extension-updates', uuid]));
+ 
+     let params = { shell_version: Config.PACKAGE_VERSION };
+ 
+     let url = REPOSITORY_URL_DOWNLOAD.format(uuid);
+     let message = Soup.form_request_new_from_hash('GET', url, params);
+ 
+-    _httpSession.queue_message(message, (session, message) => {
+-        gotExtensionZipFile(session, message, uuid, newExtensionTmpDir, () => {
+-            let oldExtension = Main.extensionManager.lookup(uuid);
+-            let extensionDir = oldExtension.dir;
+-
+-            if (!Main.extensionManager.unloadExtension(oldExtension))
+-                return;
+-
+-            FileUtils.recursivelyMoveDir(extensionDir, oldExtensionTmpDir);
+-            FileUtils.recursivelyMoveDir(newExtensionTmpDir, extensionDir);
+-
+-            let extension = null;
+-
+-            try {
+-                extension = Main.extensionManager.createExtensionObject(uuid, extensionDir, ExtensionUtils.ExtensionType.PER_USER);
+-                Main.extensionManager.loadExtension(extension);
+-            } catch(e) {
+-                if (extension)
+-                    Main.extensionManager.unloadExtension(extension);
+-
+-                logError(e, 'Error loading extension %s'.format(uuid));
+-
+-                FileUtils.recursivelyDeleteDir(extensionDir, false);
+-                FileUtils.recursivelyMoveDir(oldExtensionTmpDir, extensionDir);
+-
+-                // Restore what was there before. We can't do much if we
+-                // fail here.
+-                Main.extensionManager.loadExtension(oldExtension);
+-                return;
+-            }
+-
+-            FileUtils.recursivelyDeleteDir(oldExtensionTmpDir, true);
+-        }, (code, message) => {
+-            log('Error while updating extension %s: %s (%s)'.format(uuid, code, message ? message : ''));
++    _httpSession.queue_message(message, session => {
++        gotExtensionZipFile(session, message, uuid, dir, () => {
++            Main.extensionManager.notifyExtensionUpdate(uuid);
++        }, (code, msg) => {
++            log(`Error while downloading update for extension ${uuid}: ${code} (${msg})`);
+         });
+     });
+ }
+@@ -169,7 +136,7 @@ function checkForUpdates() {
+             if (operation == 'blacklist')
+                 uninstallExtension(uuid);
+             else if (operation == 'upgrade' || operation == 'downgrade')
+-                updateExtension(uuid);
++                downloadExtensionUpdate(uuid);
+         }
+     });
+ }
+-- 
+2.29.2
+
+
+From 49eaf28202787f0802663aa609ee9f87eb548b03 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 22 Jan 2020 15:42:06 +0100
+Subject: [PATCH 16/26] extensionDownloader: Only check updates for user
+ extensions
+
+System extensions cannot be updated through the website, so don't
+even try.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/945
+---
+ js/ui/extensionDownloader.js | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index 66cb13d56..c8f6735c5 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -118,7 +118,10 @@ function downloadExtensionUpdate(uuid) {
+ function checkForUpdates() {
+     let metadatas = {};
+     Main.extensionManager.getUuids().forEach(uuid => {
+-        metadatas[uuid] = Main.extensionManager.extensions[uuid].metadata;
++        let extension = Main.extensionManager.lookup(uuid);
++        if (extension.type !== ExtensionUtils.ExtensionType.PER_USER)
++            return;
++        metadatas[uuid] = extension.metadata;
+     });
+ 
+     let params = { shell_version: Config.PACKAGE_VERSION,
+-- 
+2.29.2
+
+
+From 67d709de14b083a013b3b1160e5cc451cf96bfde Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 27 Jan 2020 01:13:49 +0100
+Subject: [PATCH 17/26] extensionDownloader: Exclude extensions with pending
+ updates from check
+
+While it is possible that an extension has a newer version available
+than the previously downloaded update, it's more likely that we end up
+downloading the same archive again. That would be a bit silly despite
+the usually small size, so we can either use the metadata from the
+update, or exclude the extension from the check.
+
+The latter is much easier, so let's go with that for now.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/945
+---
+ js/ui/extensionDownloader.js | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index c8f6735c5..ede276c37 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -121,6 +121,8 @@ function checkForUpdates() {
+         let extension = Main.extensionManager.lookup(uuid);
+         if (extension.type !== ExtensionUtils.ExtensionType.PER_USER)
+             return;
++        if (extension.hasUpdate)
++            return;
+         metadatas[uuid] = extension.metadata;
+     });
+ 
+-- 
+2.29.2
+
+
+From 2fa19162c71787fbb9aa9af1d35e0e9cab11c1d1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 22 Jan 2020 16:53:32 +0100
+Subject: [PATCH 18/26] extensionDownloader: Include version validation in
+ update check
+
+The extensions website will consider the setting to find the best suitable
+extension version, so we should transmit the parameter for better results.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/945
+---
+ js/ui/extensionDownloader.js | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index ede276c37..f957c6c62 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -126,8 +126,13 @@ function checkForUpdates() {
+         metadatas[uuid] = extension.metadata;
+     });
+ 
+-    let params = { shell_version: Config.PACKAGE_VERSION,
+-                   installed: JSON.stringify(metadatas) };
++    let versionCheck = global.settings.get_boolean(
++        'disable-extension-version-validation');
++    let params = {
++        shell_version: Config.PACKAGE_VERSION,
++        installed: JSON.stringify(metadatas),
++        disable_version_validation: `${versionCheck}`,
++    };
+ 
+     let url = REPOSITORY_URL_UPDATE;
+     let message = Soup.form_request_new_from_hash('GET', url, params);
+-- 
+2.29.2
+
+
+From ccb0095b1981233ca980d44c260c0d36eef910bd Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 22 Jan 2020 15:09:05 +0100
+Subject: [PATCH 19/26] extensionSystem: Install pending updates on startup
+
+Now that we have a way to check for updates and download them, we
+should actually apply them as well. Do this on startup before any
+extensions are initialized, to make sure we don't run into any
+conflicts with a previously loaded version.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/945
+---
+ js/ui/extensionSystem.js | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 93faf48d4..36a248dc1 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -1,6 +1,6 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+-const { Gio, St } = imports.gi;
++const { GLib, Gio, St } = imports.gi;
+ const Signals = imports.signals;
+ 
+ const ExtensionUtils = imports.misc.extensionUtils;
+@@ -26,6 +26,7 @@ var ExtensionManager = class {
+     }
+ 
+     init() {
++        this._installExtensionUpdates();
+         this._sessionUpdated();
+     }
+ 
+@@ -424,6 +425,21 @@ var ExtensionManager = class {
+         }
+     }
+ 
++    _installExtensionUpdates() {
++        FileUtils.collectFromDatadirs('extension-updates', true, (dir, info) => {
++            let fileType = info.get_file_type();
++            if (fileType !== Gio.FileType.DIRECTORY)
++                return;
++            let uuid = info.get_name();
++            let extensionDir = Gio.File.new_for_path(
++                GLib.build_filenamev([global.userdatadir, 'extensions', uuid]));
++
++            FileUtils.recursivelyDeleteDir(extensionDir, false);
++            FileUtils.recursivelyMoveDir(dir, extensionDir);
++            FileUtils.recursivelyDeleteDir(dir, true);
++        });
++    }
++
+     _loadExtensions() {
+         global.settings.connect(`changed::${ENABLED_EXTENSIONS_KEY}`,
+             this._onEnabledExtensionsChanged.bind(this));
+-- 
+2.29.2
+
+
+From e377b16ffb667be40a850ff03e092f2f9dfe8fe8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Fri, 24 Jan 2020 18:09:34 +0100
+Subject: [PATCH 20/26] extensionPrefs: Add application icon
+
+We are about to make the tool a user-visible application, so we
+need an icon. Add one (plus its symbolic variant).
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1968
+---
+ data/gnome-shell-extension-prefs.desktop.in.in             | 1 +
+ data/icons/hicolor/scalable/apps/org.gnome.Extensions.svg  | 7 +++++++
+ .../symbolic/apps/org.gnome.Extensions-symbolic.svg        | 1 +
+ data/icons/meson.build                                     | 1 +
+ data/meson.build                                           | 1 +
+ meson.build                                                | 1 +
+ 6 files changed, 12 insertions(+)
+ create mode 100644 data/icons/hicolor/scalable/apps/org.gnome.Extensions.svg
+ create mode 100644 data/icons/hicolor/symbolic/apps/org.gnome.Extensions-symbolic.svg
+ create mode 100644 data/icons/meson.build
+
+diff --git a/data/gnome-shell-extension-prefs.desktop.in.in b/data/gnome-shell-extension-prefs.desktop.in.in
+index 1b144c5bd..1b58c424e 100644
+--- a/data/gnome-shell-extension-prefs.desktop.in.in
++++ b/data/gnome-shell-extension-prefs.desktop.in.in
+@@ -1,6 +1,7 @@
+ [Desktop Entry]
+ Type=Application
+ Name=Shell Extensions
++Icon=org.gnome.Extensions
+ Comment=Configure GNOME Shell Extensions
+ Exec=@bindir@/gnome-shell-extension-prefs %u
+ X-GNOME-Bugzilla-Bugzilla=GNOME
+diff --git a/data/icons/hicolor/scalable/apps/org.gnome.Extensions.svg b/data/icons/hicolor/scalable/apps/org.gnome.Extensions.svg
+new file mode 100644
+index 000000000..49d63888b
+--- /dev/null
++++ b/data/icons/hicolor/scalable/apps/org.gnome.Extensions.svg
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="128px" height="128px" viewBox="0 0 128 128" version="1.1">
++<g id="surface43907">
++<path style=" stroke:none;fill-rule:nonzero;fill:rgb(10.196079%,37.254903%,70.588237%);fill-opacity:1;" d="M 58.847656 15.683594 L 49.074219 30.632812 C 46.921875 33.84375 42.480469 36.65625 39.378906 35.300781 C 34.488281 33.164062 35.859375 28.144531 31.28125 25.292969 C 28.070312 23.292969 16.839844 20.449219 14.804688 27.644531 C 13.761719 31.339844 14.480469 37.410156 17.398438 41.019531 C 20.164062 44.441406 26.8125 43.355469 28.898438 47.230469 C 30.34375 49.925781 29.738281 51.628906 28.347656 54.351562 C 26.796875 57.375 22.839844 61.359375 19.265625 64.585938 C 17.480469 66.199219 13.273438 65.710938 12.03125 66.730469 C 11.753906 66.949219 12.511719 70.285156 12.511719 70.285156 C 12.511719 70.285156 19.90625 82.707031 25.539062 87.285156 C 27.773438 89.101562 30.089844 91.808594 32.742188 90.695312 C 36.035156 89.316406 35.304688 82.289062 37.644531 79.597656 C 41.976562 74.605469 50.292969 73.761719 55.582031 78.144531 C 61.277344 82.867188 60.882812 89.472656 57.941406 94.683594 C 55.175781 99.578125 49.472656 98.453125 47.484375 102.28125 C 46.730469 103.730469 47.578125 105.664062 48.765625 106.785156 C 54.628906 112.335938 71.210938 118.988281 71.210938 118.988281 L 81.605469 102.429688 C 83.757812 99.222656 86.707031 97.742188 90.011719 98.46875 C 94.605469 99.472656 95.160156 105.945312 98.914062 108.785156 C 103.195312 112.019531 110.546875 111.765625 114.351562 105.753906 C 117.128906 101.371094 116.761719 97.449219 113.765625 91.414062 C 111.808594 87.476562 103.253906 89.382812 101.171875 85.507812 C 99.722656 82.8125 99.992188 80.214844 101.859375 77.796875 C 106.332031 72 117.003906 62.699219 117.003906 62.699219 C 117.003906 62.699219 117.144531 60.824219 116.246094 59.363281 C 115.15625 57.589844 107.472656 49.273438 104.65625 46.984375 C 102.421875 45.167969 99.6875 41.921875 97.03125 43.035156 C 93.742188 44.414062 94.417969 51.058594 92.082031 53.753906 C 86.5 60.179688 78.4375 59.101562 73.914062 54.648438 C 68.644531 49.453125 68.511719 44.488281 71.453125 39.277344 C 74.222656 34.382812 79.921875 35.3125 81.910156 31.484375 C 82.664062 30.035156 81.484375 27.070312 80.597656 25.390625 C 79.277344 22.890625 65.976562 18.902344 58.847656 15.683594 Z M 58.847656 15.683594 "/>
++<path style=" stroke:none;fill-rule:nonzero;fill:rgb(20.784314%,51.764709%,89.411765%);fill-opacity:1;" d="M 58.089844 12.347656 L 48.316406 27.300781 C 46.164062 30.507812 41.726562 33.320312 38.625 31.964844 C 33.734375 29.828125 35.101562 24.808594 30.523438 21.960938 C 27.3125 19.957031 19.445312 19.160156 15.683594 25.625 C 13.730469 28.976562 13.722656 34.074219 16.644531 37.6875 C 19.410156 41.105469 26.058594 40.023438 28.140625 43.898438 C 29.589844 46.589844 28.984375 48.292969 27.589844 51.015625 C 24.492188 57.066406 11.753906 66.949219 11.753906 66.949219 C 11.753906 66.949219 19.148438 79.371094 24.785156 83.949219 C 27.019531 85.765625 29.332031 88.472656 31.988281 87.363281 C 35.277344 85.984375 34.550781 78.957031 36.886719 76.261719 C 41.21875 71.273438 49.535156 70.425781 54.824219 74.8125 C 60.519531 79.53125 60.125 86.140625 57.183594 91.347656 C 54.417969 96.242188 48.714844 95.117188 46.726562 98.949219 C 45.976562 100.398438 46.824219 102.328125 48.011719 103.449219 C 53.871094 109 70.457031 115.652344 70.457031 115.652344 L 80.847656 99.097656 C 83 95.886719 85.953125 94.40625 89.257812 95.132812 C 93.847656 96.140625 94.402344 102.609375 98.160156 105.449219 C 102.4375 108.683594 109.789062 108.433594 113.597656 102.421875 C 116.375 98.035156 116.152344 94.195312 112.175781 89.128906 C 109.460938 85.667969 102.496094 86.046875 100.414062 82.171875 C 98.96875 79.480469 99.234375 76.878906 101.101562 74.460938 C 105.578125 68.667969 116.246094 59.363281 116.246094 59.363281 C 116.246094 59.363281 109.535156 48.226562 103.898438 43.648438 C 101.664062 41.835938 98.929688 38.585938 96.277344 39.699219 C 92.988281 41.078125 93.660156 47.726562 91.324219 50.417969 C 85.746094 56.84375 77.679688 55.769531 73.15625 51.3125 C 67.886719 46.121094 67.757812 41.152344 70.699219 35.945312 C 73.464844 31.046875 79.164062 31.980469 81.152344 28.148438 C 81.90625 26.699219 80.066406 24.476562 78.878906 23.355469 C 73.015625 17.804688 58.089844 12.347656 58.089844 12.347656 Z M 58.089844 12.347656 "/>
++</g>
++</svg>
+diff --git a/data/icons/hicolor/symbolic/apps/org.gnome.Extensions-symbolic.svg b/data/icons/hicolor/symbolic/apps/org.gnome.Extensions-symbolic.svg
+new file mode 100644
+index 000000000..43786ff4a
+--- /dev/null
++++ b/data/icons/hicolor/symbolic/apps/org.gnome.Extensions-symbolic.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path d="M6.5 1C5.669 1 5 1.669 5 2.5V4H2c-.554 0-1 .446-1 1v3h1.5C3.331 8 4 8.669 4 9.5S3.331 11 2.5 11H1v3c0 .554.446 1 1 1h3v-1.5c0-.831.669-1.5 1.5-1.5s1.5.669 1.5 1.5V15h3c.554 0 1-.446 1-1v-3h1.5c.831 0 1.5-.669 1.5-1.5S14.331 8 13.5 8H12V5c0-.554-.446-1-1-1H8V2.5C8 1.669 7.331 1 6.5 1z" style="isolation:auto;mix-blend-mode:normal;marker:none" color="#000" overflow="visible" fill="#474747"/></svg>
+\ No newline at end of file
+diff --git a/data/icons/meson.build b/data/icons/meson.build
+new file mode 100644
+index 000000000..eff6e4b53
+--- /dev/null
++++ b/data/icons/meson.build
+@@ -0,0 +1 @@
++install_subdir('hicolor', install_dir: icondir)
+diff --git a/data/meson.build b/data/meson.build
+index 31ac4514e..33edb58c4 100644
+--- a/data/meson.build
++++ b/data/meson.build
+@@ -42,6 +42,7 @@ endforeach
+ 
+ 
+ subdir('dbus-interfaces')
++subdir('icons')
+ subdir('theme')
+ 
+ data_resources = [
+diff --git a/meson.build b/meson.build
+index 0acaba705..2dd1bbc7a 100644
+--- a/meson.build
++++ b/meson.build
+@@ -52,6 +52,7 @@ pkglibdir = join_paths(libdir, meson.project_name())
+ autostartdir = join_paths(sysconfdir, 'xdg', 'autostart')
+ convertdir = join_paths(datadir, 'GConf', 'gsettings')
+ desktopdir = join_paths(datadir, 'applications')
++icondir = join_paths(datadir, 'icons')
+ ifacedir = join_paths(datadir, 'dbus-1', 'interfaces')
+ localedir = join_paths(datadir, 'locale')
+ portaldir = join_paths(datadir, 'xdg-desktop-portal', 'portals')
+-- 
+2.29.2
+
+
+From 6b3fa1549f9682f54f55cdd963a242cd279ff17c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Sun, 26 Jan 2020 23:47:24 +0100
+Subject: [PATCH 21/26] extensionSystem: Show notification when updates are
+ available
+
+Now that the extensions app has the ability to handle updates, we
+can use it as source of updates notifications.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1968
+---
+ js/ui/extensionSystem.js | 39 ++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 36a248dc1..805e08cae 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -1,11 +1,12 @@
+ // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+ 
+-const { GLib, Gio, St } = imports.gi;
++const { GLib, Gio, GObject, St } = imports.gi;
+ const Signals = imports.signals;
+ 
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const FileUtils = imports.misc.fileUtils;
+ const Main = imports.ui.main;
++const MessageTray = imports.ui.messageTray;
+ 
+ const { ExtensionState, ExtensionType } = ExtensionUtils;
+ 
+@@ -17,6 +18,7 @@ var ExtensionManager = class {
+     constructor() {
+         this._initted = false;
+         this._enabled = false;
++        this._updateNotified = false;
+ 
+         this._extensions = new Map();
+         this._enabledExtensions = [];
+@@ -173,6 +175,18 @@ var ExtensionManager = class {
+ 
+         extension.hasUpdate = true;
+         this.emit('extension-state-changed', extension);
++
++        if (!this._updateNotified) {
++            this._updateNotified = true;
++
++            let source = new ExtensionUpdateSource();
++            Main.messageTray.add(source);
++
++            let notification = new MessageTray.Notification(source,
++                _('Extension Updates Available'),
++                _('Extension updates are ready to be installed.'));
++            source.notify(notification);
++        }
+     }
+ 
+     logExtensionError(uuid, error) {
+@@ -521,3 +535,26 @@ var ExtensionManager = class {
+     }
+ };
+ Signals.addSignalMethods(ExtensionManager.prototype);
++
++class ExtensionUpdateSource extends MessageTray.Source {
++    constructor() {
++        const appSys = Shell.AppSystem.get_default();
++        this._app = appSys.lookup_app('gnome-shell-extension-prefs.desktop');
++
++        super(this._app.get_name());
++    }
++
++    getIcon() {
++        return this._app.app_info.get_icon();
++    }
++
++    _createPolicy() {
++        return new MessageTray.NotificationApplicationPolicy(this._app.id);
++    }
++
++    open() {
++        this._app.activate();
++        Main.overview.hide();
++        Main.panel.closeCalendar();
++    }
++}
+-- 
+2.29.2
+
+
+From f6a5e2731f487d7a0ac088aff53ca1e76006c118 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 27 Jan 2020 00:59:19 +0100
+Subject: [PATCH 22/26] extensionSystem: Periodically check for extension
+ updates
+
+Now that we can download, apply and display extension updates, it is time
+to actually check for updates. Schedule an update check right on startup,
+then every 24 hours.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1968
+---
+ js/ui/extensionSystem.js | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 805e08cae..914abb309 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -3,6 +3,7 @@
+ const { GLib, Gio, GObject, St } = imports.gi;
+ const Signals = imports.signals;
+ 
++const ExtensionDownloader = imports.ui.extensionDownloader;
+ const ExtensionUtils = imports.misc.extensionUtils;
+ const FileUtils = imports.misc.fileUtils;
+ const Main = imports.ui.main;
+@@ -14,6 +15,8 @@ const ENABLED_EXTENSIONS_KEY = 'enabled-extensions';
+ const DISABLE_USER_EXTENSIONS_KEY = 'disable-user-extensions';
+ const EXTENSION_DISABLE_VERSION_CHECK_KEY = 'disable-extension-version-validation';
+ 
++const UPDATE_CHECK_TIMEOUT = 24 * 60 * 60; // 1 day in seconds
++
+ var ExtensionManager = class {
+     constructor() {
+         this._initted = false;
+@@ -30,6 +33,12 @@ var ExtensionManager = class {
+     init() {
+         this._installExtensionUpdates();
+         this._sessionUpdated();
++
++        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, UPDATE_CHECK_TIMEOUT, () => {
++            ExtensionDownloader.checkForUpdates();
++            return GLib.SOURCE_CONTINUE;
++        });
++        ExtensionDownloader.checkForUpdates();
+     }
+ 
+     lookup(uuid) {
+-- 
+2.29.2
+
+
+From cb3ed33a72fea3ae6b8df031abca48b99dba75a5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 9 Mar 2020 16:49:34 +0100
+Subject: [PATCH 23/26] extensionDownloader: Remove pending updates with
+ extension
+
+When an extension is uninstalled, there is no point in keeping
+a pending update: If the update didn't fail (which it currently
+does), we would end up sneakily reinstalling the extension.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/2343
+---
+ js/ui/extensionDownloader.js | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index f957c6c62..0bd77e125 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -55,6 +55,15 @@ function uninstallExtension(uuid) {
+         return false;
+ 
+     FileUtils.recursivelyDeleteDir(extension.dir, true);
++
++    try {
++        const updatesDir = Gio.File.new_for_path(GLib.build_filenamev(
++            [global.userdatadir, 'extension-updates', extension.uuid]));
++        FileUtils.recursivelyDeleteDir(updatesDir, true);
++    } catch (e) {
++        // not an error
++    }
++
+     return true;
+ }
+ 
+-- 
+2.29.2
+
+
+From 6abb5a189a7c97de8c0ed28c40f34fb625363223 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 9 Mar 2020 16:45:22 +0100
+Subject: [PATCH 24/26] extensionSystem: Catch errors when updating extensions
+
+Extension updates are installed at startup, so any errors that bubble
+up uncaught will prevent the startup to complete.
+
+While the most likely error reason was addressed in the previous commit
+(pending update for a no-longer exitent extension), it makes sense to
+catch any kind of corrupt updates to not interfere with shell startup.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/2343
+---
+ js/ui/extensionSystem.js | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 914abb309..320af54e4 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -457,9 +457,14 @@ var ExtensionManager = class {
+             let extensionDir = Gio.File.new_for_path(
+                 GLib.build_filenamev([global.userdatadir, 'extensions', uuid]));
+ 
+-            FileUtils.recursivelyDeleteDir(extensionDir, false);
+-            FileUtils.recursivelyMoveDir(dir, extensionDir);
+-            FileUtils.recursivelyDeleteDir(dir, true);
++            try {
++                FileUtils.recursivelyDeleteDir(extensionDir, false);
++                FileUtils.recursivelyMoveDir(dir, extensionDir);
++            } catch (e) {
++                log('Failed to install extension updates for %s'.format(uuid));
++            } finally {
++                FileUtils.recursivelyDeleteDir(dir, true);
++            }
+         });
+     }
+ 
+-- 
+2.29.2
+
+
+From 405897a9930362dad590eb8bd425c130dc636083 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 26 Jan 2021 17:12:04 +0100
+Subject: [PATCH 25/26] extensionSystem: Fix opening Extensions app from
+ notification
+
+Launching the app is implemented by the source's open() method, but
+only external notifications are hooked up to call into the source
+when no default action was provided.
+---
+ js/ui/extensionSystem.js | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/js/ui/extensionSystem.js b/js/ui/extensionSystem.js
+index 320af54e4..81804ea5e 100644
+--- a/js/ui/extensionSystem.js
++++ b/js/ui/extensionSystem.js
+@@ -194,6 +194,8 @@ var ExtensionManager = class {
+             let notification = new MessageTray.Notification(source,
+                 _('Extension Updates Available'),
+                 _('Extension updates are ready to be installed.'));
++            notification.connect('activated',
++                () => source.open());
+             source.notify(notification);
+         }
+     }
+-- 
+2.29.2
+
+
+From 8d50b96701eefa7f9bff4af8c855087eee35739a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 1 Feb 2021 18:26:00 +0100
+Subject: [PATCH 26/26] extensionDownloader: Refuse to override system
+ extensions
+
+The website allows to "update" system extensions by installing the
+upstream version into the user's home directory.
+
+Prevent that by refusing to download and install extensions that are
+already installed system-wide.
+---
+ js/ui/extensionDownloader.js | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/js/ui/extensionDownloader.js b/js/ui/extensionDownloader.js
+index 0bd77e125..1e6f5340a 100644
+--- a/js/ui/extensionDownloader.js
++++ b/js/ui/extensionDownloader.js
+@@ -16,6 +16,14 @@ var REPOSITORY_URL_UPDATE   = REPOSITORY_URL_BASE + '/update-info/';
+ let _httpSession;
+ 
+ function installExtension(uuid, invocation) {
++    const oldExt = Main.extensionManager.lookup(uuid);
++    if (oldExt && oldExt.type === ExtensionUtils.ExtensionType.SYSTEM) {
++        log('extensionDownloader: Trying to replace system extension %s'.format(uuid));
++        invocation.return_dbus_error('org.gnome.Shell.InstallError',
++            'System extensions cannot be replaced');
++        return;
++    }
++
+     let params = { uuid: uuid,
+                    shell_version: Config.PACKAGE_VERSION };
+ 
+-- 
+2.29.2

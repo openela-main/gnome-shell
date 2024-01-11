@@ -1,0 +1,31 @@
+From 9115f6e7962b97c3ee2fbef7b195b7116e62c070 Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Fri, 13 Dec 2019 18:14:51 +0100
+Subject: [PATCH] workspace: Pass device to startDrag()
+
+This is necessary to make DnD operations work from tablet devices on
+wayland, as it's not the same onscreen pointer sprite than mice. Fixes
+window DnD in the overview on tablet devices, no longer having them stick
+to the wrong pointer.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/897
+---
+ js/ui/workspace.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/ui/workspace.js b/js/ui/workspace.js
+index 1e9bedc28..d470f7f40 100644
+--- a/js/ui/workspace.js
++++ b/js/ui/workspace.js
+@@ -431,7 +431,7 @@ var WindowClone = GObject.registerClass({
+                     return;
+                 let [x, y] = action.get_coords();
+                 action.release();
+-                this._draggable.startDrag(x, y, global.get_current_time(), this._dragTouchSequence);
++                this._draggable.startDrag(x, y, global.get_current_time(), this._dragTouchSequence, event.get_device());
+             });
+         } else {
+             this.emit('show-chrome');
+-- 
+2.23.0
+

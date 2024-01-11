@@ -1,0 +1,643 @@
+From 781dfcf6ce7168c6b116d58df5f1c67291a7b513 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 16 May 2019 00:57:27 +0200
+Subject: [PATCH 01/11] introspect: Include `sandboxed-app-id` as well
+
+App IDs in gnome-shell don't match AppStream, Flatpak or Snap IDs. For the
+desktop portal, the latter two are more relevant, so include it in the
+returned information.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1289
+---
+ js/misc/introspect.js | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/js/misc/introspect.js b/js/misc/introspect.js
+index f7a7f2fe6..1e8300d0a 100644
+--- a/js/misc/introspect.js
++++ b/js/misc/introspect.js
+@@ -55,6 +55,11 @@ var IntrospectService = class {
+        return APP_WHITELIST.includes(sender);
+     }
+ 
++    _getSandboxedAppId(app) {
++        let ids = app.get_windows().map(w => w.get_sandboxed_app_id());
++        return ids.find(id => id != null);
++    }
++
+     _syncRunningApplications() {
+         let tracker = Shell.WindowTracker.get_default();
+         let apps = this._appSystem.get_running();
+@@ -76,6 +81,10 @@ var IntrospectService = class {
+                 newActiveApplication = app.get_id();
+             }
+ 
++            let sandboxedAppId = this._getSandboxedAppId(app);
++            if (sandboxedAppId)
++                appInfo['sandboxed-app-id'] = new GLib.Variant('s', sandboxedAppId);
++
+             newRunningApplications[app.get_id()] = appInfo;
+         }
+ 
+@@ -137,6 +146,7 @@ var IntrospectService = class {
+                 let frameRect = window.get_frame_rect();
+                 let title = window.get_title();
+                 let wmClass = window.get_wm_class();
++                let sandboxedAppId = window.get_sandboxed_app_id();
+ 
+                 windowsList[windowId] = {
+                     'app-id': GLib.Variant.new('s', app.get_id()),
+@@ -153,6 +163,10 @@ var IntrospectService = class {
+ 
+                 if (wmClass != null)
+                     windowsList[windowId]['wm-class'] = GLib.Variant.new('s', wmClass);
++
++                if (sandboxedAppId != null)
++                    windowsList[windowId]['sandboxed-app-id'] =
++                        GLib.Variant.new('s', sandboxedAppId);
+             }
+         }
+         invocation.return_value(new GLib.Variant('(a{ta{sv}})', [windowsList]));
+-- 
+2.26.2
+
+
+From b0b4fb82c058722e2171d24902ba3855ffe243f3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Wed, 18 Sep 2019 14:57:48 +0200
+Subject: [PATCH 02/11] introspect: Check whitelist also for
+ GetRunningWindows()
+
+Otherwise the xdg-desktop-portal-gtk screen cast widget won't work.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/732
+---
+ js/misc/introspect.js | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/js/misc/introspect.js b/js/misc/introspect.js
+index 1e8300d0a..cee6409a8 100644
+--- a/js/misc/introspect.js
++++ b/js/misc/introspect.js
+@@ -128,7 +128,8 @@ var IntrospectService = class {
+         let apps = this._appSystem.get_running();
+         let windowsList = {};
+ 
+-        if (!this._isIntrospectEnabled()) {
++        if (!this._isIntrospectEnabled() &&
++            !this._isSenderWhitelisted(invocation.get_sender())) {
+             invocation.return_error_literal(Gio.DBusError,
+                                             Gio.DBusError.ACCESS_DENIED,
+                                             'App introspection not allowed');
+-- 
+2.26.2
+
+
+From 23556e03db3743ddf478a3c1bbb64946c687afdf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Mon, 25 Nov 2019 19:44:10 +0100
+Subject: [PATCH 03/11] introspect: Fix whitelist check
+
+The whitelist is a list of well-known D-Bus names, which we then search
+for the unique name we get from the method invocation - unsuccesfully.
+
+Fix this by watching the bus for any name in the whitelist in order
+to maintain a map from wel-known to unique name that we can use for
+matching.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/issues/1916
+---
+ js/misc/introspect.js | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/js/misc/introspect.js b/js/misc/introspect.js
+index cee6409a8..f14eabfad 100644
+--- a/js/misc/introspect.js
++++ b/js/misc/introspect.js
+@@ -39,6 +39,15 @@ var IntrospectService = class {
+                         });
+ 
+         this._syncRunningApplications();
++
++        this._whitelistMap = new Map();
++        APP_WHITELIST.forEach(appName => {
++            Gio.DBus.watch_name(Gio.BusType.SESSION,
++                appName,
++                Gio.BusNameWatcherFlags.NONE,
++                (conn, name, owner) => this._whitelistMap.set(name, owner),
++                (conn, name) => this._whitelistMap.delete(name));
++        });
+     }
+ 
+     _isStandaloneApp(app) {
+@@ -52,7 +61,7 @@ var IntrospectService = class {
+     }
+ 
+     _isSenderWhitelisted(sender) {
+-       return APP_WHITELIST.includes(sender);
++        return [...this._whitelistMap.values()].includes(sender);
+     }
+ 
+     _getSandboxedAppId(app) {
+-- 
+2.26.2
+
+
+From 1a6275add6d214df958ed8a06c097445bef021bc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Wed, 25 Sep 2019 20:36:28 +0200
+Subject: [PATCH 04/11] introspect: Add helper to check method call permission
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ js/misc/introspect.js | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/js/misc/introspect.js b/js/misc/introspect.js
+index f14eabfad..6186754cd 100644
+--- a/js/misc/introspect.js
++++ b/js/misc/introspect.js
+@@ -120,9 +120,18 @@ var IntrospectService = class {
+                 type == Meta.WindowType.UTILITY);
+     }
+ 
++    _isInvocationAllowed(invocation) {
++        if (this._isIntrospectEnabled())
++            return true;
++
++        if (this._isSenderWhitelisted(invocation.get_sender()))
++            return true;
++
++        return false;
++    }
++
+     GetRunningApplicationsAsync(params, invocation) {
+-        if (!this._isIntrospectEnabled() &&
+-            !this._isSenderWhitelisted(invocation.get_sender())) {
++        if (!this._isInvocationAllowed(invocation)) {
+             invocation.return_error_literal(Gio.DBusError,
+                                             Gio.DBusError.ACCESS_DENIED,
+                                             'App introspection not allowed');
+@@ -137,8 +146,7 @@ var IntrospectService = class {
+         let apps = this._appSystem.get_running();
+         let windowsList = {};
+ 
+-        if (!this._isIntrospectEnabled() &&
+-            !this._isSenderWhitelisted(invocation.get_sender())) {
++        if (!this._isInvocationAllowed(invocation)) {
+             invocation.return_error_literal(Gio.DBusError,
+                                             Gio.DBusError.ACCESS_DENIED,
+                                             'App introspection not allowed');
+-- 
+2.26.2
+
+
+From f578dc01cf774faa4504a4d258cc0e82060d988b Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Tue, 1 Oct 2019 11:55:33 +0200
+Subject: [PATCH 05/11] shell-util: Add API to check for X11 extensions
+
+Will be used to disable animations when running inside Xvnc. This was
+done in gsd-xsettings before.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ src/shell-util.c | 26 ++++++++++++++++++++++++++
+ src/shell-util.h |  3 +++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/src/shell-util.c b/src/shell-util.c
+index 31bb18e70..fa3fc08c8 100644
+--- a/src/shell-util.c
++++ b/src/shell-util.c
+@@ -21,6 +21,8 @@
+ #include <gtk/gtk.h>
+ #include <gdk-pixbuf/gdk-pixbuf.h>
+ #include <meta/meta-shaped-texture.h>
++#include <meta/display.h>
++#include <meta/meta-x11-display.h>
+ 
+ #include <locale.h>
+ #ifdef HAVE__NL_TIME_FIRST_WEEKDAY
+@@ -613,3 +615,27 @@ shell_util_check_cloexec_fds (void)
+   fdwalk (check_cloexec, NULL);
+   g_info ("Open fd CLOEXEC check complete");
+ }
++
++/**
++ * shell_util_has_x11_display_extension:
++ * @display: A #MetaDisplay
++ * @extension: An X11 extension
++ *
++ * If the corresponding X11 display provides the passed extension, return %TRUE,
++ * otherwise %FALSE. If there is no X11 display, %FALSE is passed.
++ */
++gboolean
++shell_util_has_x11_display_extension (MetaDisplay *display,
++                                      const char  *extension)
++{
++  MetaX11Display *x11_display;
++  Display *xdisplay;
++  int op, event, error;
++
++  x11_display = meta_display_get_x11_display (display);
++  if (!x11_display)
++    return FALSE;
++
++  xdisplay = meta_x11_display_get_xdisplay (x11_display);
++  return XQueryExtension (xdisplay, extension, &op, &event, &error);
++}
+diff --git a/src/shell-util.h b/src/shell-util.h
+index 6904f43bc..02b8404e9 100644
+--- a/src/shell-util.h
++++ b/src/shell-util.h
+@@ -59,6 +59,9 @@ cairo_surface_t * shell_util_composite_capture_images (ClutterCapture  *captures
+ 
+ void shell_util_check_cloexec_fds (void);
+ 
++gboolean shell_util_has_x11_display_extension (MetaDisplay *display,
++                                               const char  *extension);
++
+ G_END_DECLS
+ 
+ #endif /* __SHELL_UTIL_H__ */
+-- 
+2.26.2
+
+
+From 48ee79bb7b48c7e93e77e35629f21bbdbabc253f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Tue, 1 Oct 2019 11:56:34 +0200
+Subject: [PATCH 06/11] st/settings: Add API to inhibit animations
+
+There may be situations where we shouldn't enable animations. Make it
+possible for the Shell to decide when there are such situations and in
+when needed inhibit animations.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ src/st/st-settings.c | 38 +++++++++++++++++++++++++++++++++++++-
+ src/st/st-settings.h |  4 ++++
+ 2 files changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/src/st/st-settings.c b/src/st/st-settings.c
+index 17f2c466e..ebfd28480 100644
+--- a/src/st/st-settings.c
++++ b/src/st/st-settings.c
+@@ -54,6 +54,7 @@ struct _StSettings
+ 
+   gchar *gtk_theme;
+   gchar *gtk_icon_theme;
++  int inhibit_animations_count;
+   gboolean enable_animations;
+   gboolean primary_paste;
+   gboolean magnifier_active;
+@@ -62,6 +63,41 @@ struct _StSettings
+ 
+ G_DEFINE_TYPE (StSettings, st_settings, G_TYPE_OBJECT)
+ 
++static gboolean
++get_enable_animations (StSettings *settings)
++{
++  if (settings->inhibit_animations_count > 0)
++    return FALSE;
++  else
++    return settings->enable_animations;
++}
++
++void
++st_settings_inhibit_animations (StSettings *settings)
++{
++  gboolean enable_animations;
++
++  enable_animations = get_enable_animations (settings);
++  settings->inhibit_animations_count++;
++
++  if (enable_animations != get_enable_animations (settings))
++    g_object_notify_by_pspec (G_OBJECT (settings),
++                              props[PROP_ENABLE_ANIMATIONS]);
++}
++
++void
++st_settings_uninhibit_animations (StSettings *settings)
++{
++  gboolean enable_animations;
++
++  enable_animations = get_enable_animations (settings);
++  settings->inhibit_animations_count--;
++
++  if (enable_animations != get_enable_animations (settings))
++    g_object_notify_by_pspec (G_OBJECT (settings),
++                              props[PROP_ENABLE_ANIMATIONS]);
++}
++
+ static void
+ st_settings_finalize (GObject *object)
+ {
+@@ -95,7 +131,7 @@ st_settings_get_property (GObject    *object,
+   switch (prop_id)
+     {
+     case PROP_ENABLE_ANIMATIONS:
+-      g_value_set_boolean (value, settings->enable_animations);
++      g_value_set_boolean (value, get_enable_animations (settings));
+       break;
+     case PROP_PRIMARY_PASTE:
+       g_value_set_boolean (value, settings->primary_paste);
+diff --git a/src/st/st-settings.h b/src/st/st-settings.h
+index c2c4fa23e..8b2549469 100644
+--- a/src/st/st-settings.h
++++ b/src/st/st-settings.h
+@@ -33,6 +33,10 @@ G_DECLARE_FINAL_TYPE (StSettings, st_settings, ST, SETTINGS, GObject)
+ 
+ StSettings * st_settings_get (void);
+ 
++void st_settings_inhibit_animations (StSettings *settings);
++
++void st_settings_uninhibit_animations (StSettings *settings);
++
+ G_END_DECLS
+ 
+ #endif /* __ST_SETTINGS_H__ */
+-- 
+2.26.2
+
+
+From 80025388c44296b629c8f24ea673d77ffc4efc67 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Tue, 1 Oct 2019 12:02:31 +0200
+Subject: [PATCH 07/11] main: Inhibit animations when software rendered
+
+This was previously decided by gsd-xsettings.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ js/ui/main.js | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/js/ui/main.js b/js/ui/main.js
+index 978f83c3f..c3230ff03 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -147,6 +147,8 @@ function _initializeUI() {
+     _loadOskLayouts();
+     _loadDefaultStylesheet();
+ 
++    new AnimationsSettings();
++
+     // Setup the stage hierarchy early
+     layoutManager = new Layout.LayoutManager();
+ 
+@@ -723,3 +725,13 @@ function showRestartMessage(message) {
+     let restartMessage = new RestartMessage(message);
+     restartMessage.open();
+ }
++
++var AnimationsSettings = class {
++    constructor() {
++        let backend = Meta.get_backend();
++        if (!backend.is_rendering_hardware_accelerated()) {
++            St.Settings.get().inhibit_animations();
++            return;
++        }
++    }
++};
+-- 
+2.26.2
+
+
+From 788ecb60e35d8a369f0747813f37e8b1ca27cb87 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Tue, 1 Oct 2019 12:03:52 +0200
+Subject: [PATCH 08/11] main: Inhibit animations if X server advertises
+ VNC-EXTENSION
+
+This was previously done by gsd-xsettings to disable animations when
+running in Xvnc.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ js/ui/main.js | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/js/ui/main.js b/js/ui/main.js
+index c3230ff03..ae7c3ffd0 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -733,5 +733,12 @@ var AnimationsSettings = class {
+             St.Settings.get().inhibit_animations();
+             return;
+         }
++
++        let isXvnc = Shell.util_has_x11_display_extension(
++            global.display, 'VNC-EXTENSION');
++        if (isXvnc) {
++            St.Settings.get().inhibit_animations();
++            return;
++        }
+     }
+ };
+-- 
+2.26.2
+
+
+From 1da5a7ce4cf0b95b96dd50b62ac6c1380fd88cb1 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Tue, 1 Oct 2019 12:04:52 +0200
+Subject: [PATCH 09/11] main: Inhibit animations when there is a remote desktop
+ session
+
+If a remote desktop session asks for animations to be disabled, inhibit
+animations while the session is active.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ js/ui/main.js | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/js/ui/main.js b/js/ui/main.js
+index ae7c3ffd0..1203b3c39 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -740,5 +740,31 @@ var AnimationsSettings = class {
+             St.Settings.get().inhibit_animations();
+             return;
+         }
++
++        let remoteAccessController = backend.get_remote_access_controller();
++        if (!remoteAccessController)
++            return;
++
++        this._handles = new Set();
++        remoteAccessController.connect('new-handle',
++            (_, handle) => this._onNewRemoteAccessHandle(handle));
++    }
++
++    _onRemoteAccessHandleStopped(handle) {
++        let settings = St.Settings.get();
++
++        settings.uninhibit_animations();
++        this._handles.delete(handle);
++    }
++
++    _onNewRemoteAccessHandle(handle) {
++        if (!handle.get_disable_animations())
++            return;
++
++        let settings = St.Settings.get();
++
++        settings.inhibit_animations();
++        this._handles.add(handle);
++        handle.connect('stopped', this._onRemoteAccessHandleStopped.bind(this));
+     }
+ };
+-- 
+2.26.2
+
+
+From ebfd46341a2d7a6338386e4be4a2807a6bc6e63c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Tue, 1 Oct 2019 12:06:13 +0200
+Subject: [PATCH 10/11] introspect: Rename variable
+
+It was too generic, and would conflict with a StSettings variable.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ js/misc/introspect.js | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/js/misc/introspect.js b/js/misc/introspect.js
+index 6186754cd..8e68a7e4f 100644
+--- a/js/misc/introspect.js
++++ b/js/misc/introspect.js
+@@ -29,7 +29,9 @@ var IntrospectService = class {
+                                     this._syncRunningApplications();
+                                 });
+ 
+-        this._settings = new Gio.Settings({ schema_id: INTROSPECT_SCHEMA });
++        this._introspectSettings = new Gio.Settings({
++            schema_id: INTROSPECT_SCHEMA,
++        });
+ 
+         let tracker = Shell.WindowTracker.get_default();
+         tracker.connect('notify::focus-app',
+@@ -57,7 +59,7 @@ var IntrospectService = class {
+     }
+ 
+     _isIntrospectEnabled() {
+-       return this._settings.get_boolean(INTROSPECT_KEY);
++        return this._introspectSettings.get_boolean(INTROSPECT_KEY);
+     }
+ 
+     _isSenderWhitelisted(sender) {
+-- 
+2.26.2
+
+
+From 343e7792fc84c296b331c3fcb142ed79d2ce9bd5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Tue, 1 Oct 2019 12:07:03 +0200
+Subject: [PATCH 11/11] introspect: Add AnimationsEnabled property
+
+While the gsetting is available for all who needs it, the Shell might
+override it given various hueristics. Expose the decision made by the
+Shell via a new property.
+
+Intended to be used by gsd-xsettings as well as xdg-desktop-portal-gtk.
+
+This also add a version property to the API, so that semi external
+services (xdg-desktop-portal-gtk) can detect what API is expected to be
+present.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/757
+---
+ .../org.gnome.Shell.Introspect.xml            | 14 ++++++++++
+ js/misc/introspect.js                         | 27 ++++++++++++++++++-
+ 2 files changed, 40 insertions(+), 1 deletion(-)
+
+diff --git a/data/dbus-interfaces/org.gnome.Shell.Introspect.xml b/data/dbus-interfaces/org.gnome.Shell.Introspect.xml
+index 9508681af..d71f2414b 100644
+--- a/data/dbus-interfaces/org.gnome.Shell.Introspect.xml
++++ b/data/dbus-interfaces/org.gnome.Shell.Introspect.xml
+@@ -57,5 +57,19 @@
+     <method name="GetWindows">
+       <arg name="windows" direction="out" type="a{ta{sv}}" />
+     </method>
++
++    <!--
++       AnimationsEnabled:
++       @short_description: Whether the shell animations are enabled
++
++       By default determined by the org.gnome.desktop.interface enable-animations
++       gsetting, but may be overridden, e.g. if there is an active screen cast or
++       remote desktop session that asked for animations to be disabled.
++
++       Since: 2
++    -->
++    <property name="AnimationsEnabled" type="b" access="read"/>
++
++    <property name="version" type="u" access="read"/>
+   </interface>
+ </node>
+diff --git a/js/misc/introspect.js b/js/misc/introspect.js
+index 8e68a7e4f..7c62113e5 100644
+--- a/js/misc/introspect.js
++++ b/js/misc/introspect.js
+@@ -1,9 +1,11 @@
+-const { Gio, GLib, Meta, Shell } = imports.gi;
++const { Gio, GLib, Meta, Shell, St } = imports.gi;
+ 
+ const INTROSPECT_SCHEMA = 'org.gnome.shell';
+ const INTROSPECT_KEY = 'introspect';
+ const APP_WHITELIST = ['org.freedesktop.impl.portal.desktop.gtk'];
+ 
++const INTROSPECT_DBUS_API_VERSION = 2;
++
+ const { loadInterfaceXML } = imports.misc.fileUtils;
+ 
+ const IntrospectDBusIface = loadInterfaceXML('org.gnome.Shell.Introspect');
+@@ -21,6 +23,7 @@ var IntrospectService = class {
+         this._runningApplicationsDirty = true;
+         this._activeApplication = null;
+         this._activeApplicationDirty = true;
++        this._animationsEnabled = true;
+ 
+         this._appSystem = Shell.AppSystem.get_default();
+         this._appSystem.connect('app-state-changed',
+@@ -50,6 +53,11 @@ var IntrospectService = class {
+                 (conn, name, owner) => this._whitelistMap.set(name, owner),
+                 (conn, name) => this._whitelistMap.delete(name));
+         });
++
++        this._settings = St.Settings.get();
++        this._settings.connect('notify::enable-animations',
++            this._syncAnimationsEnabled.bind(this));
++        this._syncAnimationsEnabled();
+     }
+ 
+     _isStandaloneApp(app) {
+@@ -191,4 +199,21 @@ var IntrospectService = class {
+         }
+         invocation.return_value(new GLib.Variant('(a{ta{sv}})', [windowsList]));
+     }
++
++    _syncAnimationsEnabled() {
++        let wasAnimationsEnabled = this._animationsEnabled;
++        this._animationsEnabled = this._settings.enable_animations;
++        if (wasAnimationsEnabled !== this._animationsEnabled) {
++            let variant = new GLib.Variant('b', this._animationsEnabled);
++            this._dbusImpl.emit_property_changed('AnimationsEnabled', variant);
++        }
++    }
++
++    get AnimationsEnabled() {
++        return this._animationsEnabled;
++    }
++
++    get version() {
++        return INTROSPECT_DBUS_API_VERSION;
++    }
+ };
+-- 
+2.26.2
+

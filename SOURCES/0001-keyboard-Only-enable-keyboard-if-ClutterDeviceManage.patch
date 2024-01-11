@@ -1,0 +1,39 @@
+From 2acede02f30833c3fb891db8483f933f7b41508c Mon Sep 17 00:00:00 2001
+From: rpm-build <rpm-build>
+Date: Wed, 21 Oct 2020 21:32:03 +0200
+Subject: [PATCH] keyboard: Only enable keyboard if
+ ClutterDeviceManager::touch-mode is enabled
+
+---
+ js/ui/keyboard.js | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/keyboard.js b/js/ui/keyboard.js
+index 94b5325..b1ee270 100644
+--- a/js/ui/keyboard.js
++++ b/js/ui/keyboard.js
+@@ -1051,6 +1051,9 @@ var Keyboard = class Keyboard {
+         this._suggestions = null;
+         this._emojiKeyVisible = true;
+ 
++        let manager = Clutter.DeviceManager.get_default();
++        manager.connect('notify::touch-mode', this._syncEnabled.bind(this));
++
+         this._focusTracker = new FocusTracker();
+         this._focusTracker.connect('position-changed', this._onFocusPositionChanged.bind(this));
+         this._focusTracker.connect('reset', () => {
+@@ -1120,8 +1123,10 @@ var Keyboard = class Keyboard {
+ 
+     _syncEnabled() {
+         let wasEnabled = this._enabled;
++        let manager = Clutter.DeviceManager.get_default();
++        let autoEnabled = manager.get_touch_mode() && this._lastDeviceIsTouchscreen();
+         this._enableKeyboard = this._a11yApplicationsSettings.get_boolean(SHOW_KEYBOARD);
+-        this._enabled = this._enableKeyboard || this._lastDeviceIsTouchscreen();
++        this._enabled = this._enableKeyboard || autoEnabled;
+         if (!this._enabled && !this._keyboardController)
+             return;
+ 
+-- 
+2.26.2
+

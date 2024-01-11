@@ -1,0 +1,152 @@
+From c9277326055c96185a80b68d4228eee360bb0e7c Mon Sep 17 00:00:00 2001
+From: Georges Basile Stavracas Neto <georges.stavracas@gmail.com>
+Date: Thu, 1 Aug 2019 20:58:20 -0300
+Subject: [PATCH 3/6] shell/app-system: Monitor for icon theme changes
+
+Whenever an app is installed, the usual routine is
+to run 'gtk-update-icon-cache' after installing all
+of the app's files.
+
+The side effect of that is that the .desktop file of
+the application is installed before the icon theme
+is updated. By the time GAppInfoMonitor emits the
+'changed' signal, the icon theme is not yet updated,
+leading to StIcon use the fallback icon.
+
+Under some circumstances (e.g. on very slow spinning
+disks) the app icon is never actually loaded, and we
+see the fallback icon forever.
+
+Monitor the icon theme for changes when an app is
+installed. Try as many as 6 times before giving up
+on detecting an icon theme update.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/661
+---
+ src/shell-app-system.c    | 54 +++++++++++++++++++++++++++++++++++++++
+ src/st/st-texture-cache.c |  8 ++++++
+ src/st/st-texture-cache.h |  2 ++
+ 3 files changed, 64 insertions(+)
+
+diff --git a/src/shell-app-system.c b/src/shell-app-system.c
+index f632cbe54..127f29ef0 100644
+--- a/src/shell-app-system.c
++++ b/src/shell-app-system.c
+@@ -14,6 +14,14 @@
+ #include "shell-app-system-private.h"
+ #include "shell-global.h"
+ #include "shell-util.h"
++#include "st.h"
++
++/* Rescan for at most RESCAN_TIMEOUT_MS * MAX_RESCAN_RETRIES. That
++ * should be plenty of time for even a slow spinning drive to update
++ * the icon cache.
++ */
++#define RESCAN_TIMEOUT_MS 2500
++#define MAX_RESCAN_RETRIES 6
+ 
+ /* Vendor prefixes are something that can be preprended to a .desktop
+  * file name.  Undo this.
+@@ -51,6 +59,9 @@ struct _ShellAppSystemPrivate {
+   GHashTable *id_to_app;
+   GHashTable *startup_wm_class_to_id;
+   GList *installed_apps;
++
++  guint rescan_icons_timeout_id;
++  guint n_rescan_retries;
+ };
+ 
+ static void shell_app_system_finalize (GObject *object);
+@@ -157,12 +168,54 @@ stale_app_remove_func (gpointer key,
+   return app_is_stale (value);
+ }
+ 
++static gboolean
++rescan_icon_theme_cb (gpointer user_data)
++{
++  ShellAppSystemPrivate *priv;
++  ShellAppSystem *self;
++  StTextureCache *texture_cache;
++  gboolean rescanned;
++
++  self = (ShellAppSystem *) user_data;
++  priv = self->priv;
++
++  texture_cache = st_texture_cache_get_default ();
++  rescanned = st_texture_cache_rescan_icon_theme (texture_cache);
++
++  priv->n_rescan_retries++;
++
++  if (rescanned || priv->n_rescan_retries >= MAX_RESCAN_RETRIES)
++    {
++      priv->n_rescan_retries = 0;
++      priv->rescan_icons_timeout_id = 0;
++      return G_SOURCE_REMOVE;
++    }
++
++  return G_SOURCE_CONTINUE;
++}
++
++static void
++rescan_icon_theme (ShellAppSystem *self)
++{
++  ShellAppSystemPrivate *priv = self->priv;
++
++  priv->n_rescan_retries = 0;
++
++  if (priv->rescan_icons_timeout_id > 0)
++    return;
++
++  priv->rescan_icons_timeout_id = g_timeout_add (RESCAN_TIMEOUT_MS,
++                                                 rescan_icon_theme_cb,
++                                                 self);
++}
++
+ static void
+ installed_changed (GAppInfoMonitor *monitor,
+                    gpointer         user_data)
+ {
+   ShellAppSystem *self = user_data;
+ 
++  rescan_icon_theme (self);
+   scan_startup_wm_class_to_id (self);
+ 
+   g_hash_table_foreach_remove (self->priv->id_to_app, stale_app_remove_func, NULL);
+@@ -200,6 +253,7 @@ shell_app_system_finalize (GObject *object)
+   g_hash_table_destroy (priv->id_to_app);
+   g_hash_table_destroy (priv->startup_wm_class_to_id);
+   g_list_free_full (priv->installed_apps, g_object_unref);
++  g_clear_handle_id (&priv->rescan_icons_timeout_id, g_source_remove);
+ 
+   G_OBJECT_CLASS (shell_app_system_parent_class)->finalize (object);
+ }
+diff --git a/src/st/st-texture-cache.c b/src/st/st-texture-cache.c
+index c1331747f..4d0d617c4 100644
+--- a/src/st/st-texture-cache.c
++++ b/src/st/st-texture-cache.c
+@@ -1554,3 +1554,11 @@ st_texture_cache_get_default (void)
+     instance = g_object_new (ST_TYPE_TEXTURE_CACHE, NULL);
+   return instance;
+ }
++
++gboolean
++st_texture_cache_rescan_icon_theme (StTextureCache *cache)
++{
++  StTextureCachePrivate *priv = cache->priv;
++
++  return gtk_icon_theme_rescan_if_needed (priv->icon_theme);
++}
+diff --git a/src/st/st-texture-cache.h b/src/st/st-texture-cache.h
+index 11d1c4e64..a99316da8 100644
+--- a/src/st/st-texture-cache.h
++++ b/src/st/st-texture-cache.h
+@@ -113,4 +113,6 @@ CoglTexture * st_texture_cache_load (StTextureCache       *cache,
+                                      void                 *data,
+                                      GError              **error);
+ 
++gboolean st_texture_cache_rescan_icon_theme (StTextureCache *cache);
++
+ #endif /* __ST_TEXTURE_CACHE_H__ */
+-- 
+2.26.2
+

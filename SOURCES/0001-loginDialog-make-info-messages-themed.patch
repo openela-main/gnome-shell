@@ -1,0 +1,32 @@
+From 9cfa56d4f3c5fe513630c58c09bd2421f3ca580b Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Mon, 26 Jun 2017 14:35:05 -0400
+Subject: [PATCH] loginDialog: make info messages themed
+
+They were lacking a definition before leading them to
+show up invisible.
+---
+ data/theme/gnome-shell-sass/_common.scss | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/data/theme/gnome-shell-sass/_common.scss b/data/theme/gnome-shell-sass/_common.scss
+index c2df28279..a382ce561 100644
+--- a/data/theme/gnome-shell-sass/_common.scss
++++ b/data/theme/gnome-shell-sass/_common.scss
+@@ -1801,7 +1801,12 @@ StScrollBar {
+   .login-dialog-banner { color: darken($osd_fg_color,10%); }
+   .login-dialog-button-box { spacing: 5px; }
+   .login-dialog-message-warning { color: $warning_color; }
+-  .login-dialog-message-hint { padding-top: 0; padding-bottom: 20px; }
++  .login-dialog-message-hint, .login-dialog-message {
++    color: darken($osd_fg_color, 20%);
++    padding-top: 0;
++    padding-bottom: 20px;
++    min-height: 2.75em;
++  }
+   .login-dialog-user-selection-box { padding: 100px 0px; }
+   .login-dialog-not-listed-label {
+     padding-left: 2px;
+-- 
+2.21.0
+

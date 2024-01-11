@@ -1,0 +1,115 @@
+From 055bc14c70af66fe1893dcd4c42c65662ae1f9d0 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Mon, 21 Jan 2019 15:07:15 -0500
+Subject: [PATCH 4/4] background: refresh background on gl-video-memory-purged
+ signal
+
+Right now we refresh the background when resuming and when NVIDIA.
+But mutter has a signal to tell us specifically when to refresh,
+and the signal is only emitted for NVIDIA, so use that instead.
+---
+ js/ui/background.js |  9 +++++++--
+ js/ui/layout.js     | 12 ------------
+ src/shell-util.c    | 27 ---------------------------
+ src/shell-util.h    |  2 --
+ 4 files changed, 7 insertions(+), 43 deletions(-)
+
+diff --git a/js/ui/background.js b/js/ui/background.js
+index 75b76a57e..466cc4de7 100644
+--- a/js/ui/background.js
++++ b/js/ui/background.js
+@@ -527,10 +527,15 @@ var BackgroundSource = class BackgroundSource {
+         let monitorManager = Meta.MonitorManager.get();
+         this._monitorsChangedId =
+             monitorManager.connect('monitors-changed',
+-                                   this._onMonitorsChanged.bind(this));
++                                   this._refresh.bind(this));
++
++        global.display.connect('gl-video-memory-purged', () => {
++            Meta.Background.refresh_all();
++            this._refresh();
++        });
+     }
+ 
+-    _onMonitorsChanged() {
++    _refresh() {
+         for (let monitorIndex in this._backgrounds) {
+             let background = this._backgrounds[monitorIndex];
+ 
+diff --git a/js/ui/layout.js b/js/ui/layout.js
+index 30e750dc5..2b3bb7442 100644
+--- a/js/ui/layout.js
++++ b/js/ui/layout.js
+@@ -282,18 +282,6 @@ var LayoutManager = GObject.registerClass({
+         monitorManager.connect('monitors-changed',
+                                this._monitorsChanged.bind(this));
+         this._monitorsChanged();
+-
+-        // NVIDIA drivers don't preserve FBO contents across
+-        // suspend/resume, see
+-        // https://bugzilla.gnome.org/show_bug.cgi?id=739178
+-        if (Shell.util_need_background_refresh()) {
+-            LoginManager.getLoginManager().connect('prepare-for-sleep',
+-                (lm, suspending) => {
+-                    if (suspending)
+-                        return;
+-                    Meta.Background.refresh_all();
+-                });
+-        }
+     }
+ 
+     // This is called by Main after everything else is constructed
+diff --git a/src/shell-util.c b/src/shell-util.c
+index c6e5abed6..9c25643c6 100644
+--- a/src/shell-util.c
++++ b/src/shell-util.c
+@@ -374,33 +374,6 @@ shell_util_create_pixbuf_from_data (const guchar      *data,
+                                    (GdkPixbufDestroyNotify) g_free, NULL);
+ }
+ 
+-typedef const gchar *(*ShellGLGetString) (GLenum);
+-
+-static const gchar *
+-get_gl_vendor (void)
+-{
+-  static const gchar *vendor = NULL;
+-
+-  if (!vendor)
+-    {
+-      ShellGLGetString gl_get_string;
+-      gl_get_string = (ShellGLGetString) cogl_get_proc_address ("glGetString");
+-      if (gl_get_string)
+-        vendor = gl_get_string (GL_VENDOR);
+-    }
+-
+-  return vendor;
+-}
+-
+-gboolean
+-shell_util_need_background_refresh (void)
+-{
+-  if (g_strcmp0 (get_gl_vendor (), "NVIDIA Corporation") == 0)
+-    return TRUE;
+-
+-  return FALSE;
+-}
+-
+ static gboolean
+ canvas_draw_cb (ClutterContent *content,
+                 cairo_t        *cr,
+diff --git a/src/shell-util.h b/src/shell-util.h
+index 6904f43bc..049c3fe18 100644
+--- a/src/shell-util.h
++++ b/src/shell-util.h
+@@ -44,8 +44,6 @@ GdkPixbuf *shell_util_create_pixbuf_from_data (const guchar      *data,
+                                                int                height,
+                                                int                rowstride);
+ 
+-gboolean shell_util_need_background_refresh (void);
+-
+ ClutterContent * shell_util_get_content_for_window_actor (MetaWindowActor *window_actor,
+                                                           MetaRectangle   *window_rect);
+ 
+-- 
+2.21.0
+
