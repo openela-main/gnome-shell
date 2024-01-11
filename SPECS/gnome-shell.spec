@@ -2,7 +2,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        12%{?dist}
+Release:        13%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -27,6 +27,7 @@ Patch14: support-choicelist-extension.patch
 Patch15: gdm-networking.patch
 Patch16: login-screen-extensions.patch
 Patch17: fix-resetting-auth-prompt.patch
+Patch18: 0001-authPrompt-Disregard-smartcard-status-changes-events.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -274,6 +275,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_mandir}/man1/gnome-shell.1*
 
 %changelog
+* Mon May 15 2023 Ray Strode <rstrode@redhat.com> - 40.10-13
+- Don't reset smartcard conversation twice when smartcard is inserted.
+  Resolves: #2140898
+
 * Wed Feb 22 2023 Florian Müllner <fmuellner@redhat.com> - 40.10-12
 - Require xdg-desktop-portal-gnome
   Resolves: #2172524
