@@ -1,6 +1,6 @@
 Name:           gnome-shell
 Version:        3.32.2
-Release:        50%{?dist}
+Release:        51%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -69,6 +69,7 @@ Patch59: 0001-shell-recorder-Restore-cursor-recording.patch
 Patch60: 0001-st-bin-Disallow-st_bin_set_child-with-already-parent.patch
 Patch61: 0001-layout-Initialize-regions-unconditionally.patch
 Patch62: fix-nm-device-settings.patch
+Patch63: owe-support.patch
 
 # Backport JS invalid access warnings (#1651894, #1663171, #1642482, #1637622)
 Patch70: fix-invalid-access-warnings.patch
@@ -283,6 +284,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_mandir}/man1/%{name}.1.gz
 
 %changelog
+* Mon Sep 11 2023 Florian Müllner <fmuellner@redhat.com> - 3.32.2-51
+- Support OWE networks
+  Resolves: #2238480
+
 * Thu Dec 01 2022 Florian Müllner <fmuellner@redhat.com> - 3.32.2-50
 - Fix struts on login screen
   Resolves: #2138941
