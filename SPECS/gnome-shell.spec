@@ -2,7 +2,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        13%{?dist}
+Release:        14%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -56,6 +56,7 @@ Patch52: 0001-osk-layouts-Replace-SS-extra-key-with.patch
 Patch53: 0001-po-Update-translations.patch
 Patch54: 0001-st-icon-Only-get-resource-scale-after-peeking-theme-.patch
 Patch55: 0001-window-tracker-Only-emit-tracked-windows-changed-on-.patch
+Patch56: 0001-extensionSystem-Support-locking-down-extension-insta.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -275,6 +276,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_mandir}/man1/gnome-shell.1*
 
 %changelog
+* Wed Feb 14 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-14
+- Allow restricting extension installation
+  Resolves: RHEL-25201
+
 * Mon May 15 2023 Ray Strode <rstrode@redhat.com> - 40.10-13
 - Don't reset smartcard conversation twice when smartcard is inserted.
   Resolves: #2140898
