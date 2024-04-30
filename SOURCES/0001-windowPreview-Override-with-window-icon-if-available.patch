@@ -1,0 +1,46 @@
+From 1cad6c8d47fb9f0b17a2c47f93e5f923d1cb32c3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 7 Mar 2024 18:22:32 +0100
+Subject: [PATCH] windowPreview: Override with window icon if available
+
+---
+ js/ui/windowPreview.js | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/js/ui/windowPreview.js b/js/ui/windowPreview.js
+index e67ec9ec0f..db325258b4 100644
+--- a/js/ui/windowPreview.js
++++ b/js/ui/windowPreview.js
+@@ -123,6 +123,12 @@ var WindowPreview = GObject.registerClass({
+         const tracker = Shell.WindowTracker.get_default();
+         const app = tracker.get_window_app(this.metaWindow);
+         this._icon = app.create_icon_texture(ICON_SIZE);
++        // Override with window icon if available
++        if (this._hasWindowIcon()) {
++            const textureCache = St.TextureCache.get_default();
++            this._icon.gicon = textureCache.bind_cairo_surface_property(
++                this.metaWindow, 'icon');
++        }
+         this._icon.add_style_class_name('icon-dropshadow');
+         this._icon.set({
+             reactive: true,
+@@ -226,6 +232,16 @@ var WindowPreview = GObject.registerClass({
+         });
+     }
+ 
++    _hasWindowIcon() {
++        // HACK: GI cannot handle CairoSurface, so this
++        // will throw if the icon property is non-null
++        try {
++            return this.metaWindow.icon !== null;
++        } catch (e) {
++            return true;
++        }
++    }
++
+     _updateIconScale() {
+         const { ControlsState } = OverviewControls;
+         const { currentState, initialState, finalState } =
+-- 
+2.44.0
+

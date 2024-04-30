@@ -2,7 +2,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        17%{?dist}
+Release:        18%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -60,6 +60,7 @@ Patch56: owe-support.patch
 Patch57: 0001-windowMenu-Ignore-release.patch
 Patch58: optional-portal-helper.patch
 Patch59: 0001-extensionSystem-Support-locking-down-extension-insta.patch
+Patch60: 0001-windowPreview-Override-with-window-icon-if-available.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -279,6 +280,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_mandir}/man1/gnome-shell.1*
 
 %changelog
+* Tue Mar 19 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-18
+- Use window icon in overview if available
+  Resolves: RHEL-29659
+
 * Sat Feb 10 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-17
 - Allow restricting extension installation
   Resolves: RHEL-25017
