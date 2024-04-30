@@ -2,7 +2,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        14%{?dist}
+Release:        17%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -56,7 +56,10 @@ Patch52: 0001-osk-layouts-Replace-SS-extra-key-with.patch
 Patch53: 0001-po-Update-translations.patch
 Patch54: 0001-st-icon-Only-get-resource-scale-after-peeking-theme-.patch
 Patch55: 0001-window-tracker-Only-emit-tracked-windows-changed-on-.patch
-Patch56: 0001-extensionSystem-Support-locking-down-extension-insta.patch
+Patch56: owe-support.patch
+Patch57: 0001-windowMenu-Ignore-release.patch
+Patch58: optional-portal-helper.patch
+Patch59: 0001-extensionSystem-Support-locking-down-extension-insta.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -276,9 +279,21 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_mandir}/man1/gnome-shell.1*
 
 %changelog
-* Wed Feb 14 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-14
+* Sat Feb 10 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-17
 - Allow restricting extension installation
-  Resolves: RHEL-25201
+  Resolves: RHEL-25017
+
+* Wed Nov 01 2023 Michael Catanzaro <mcatanzaro@redhat.com> - 40.10-16
+- Disable captive portal helper if WebKitGTK is not installed
+  Resolves: RHEL-10487
+
+* Wed Oct 18 2023 Florian Müllner <fmuellner@redhat.com> - 40.10-15
+- Fix window-menu closing immediately on open
+  Resolves: RHEL-2663
+
+* Wed Sep 06 2023 Florian Müllner <fmuellner@redhat.com> - 40.10-14
+- Support OWE networks
+  Resolves: #2236665
 
 * Mon May 15 2023 Ray Strode <rstrode@redhat.com> - 40.10-13
 - Don't reset smartcard conversation twice when smartcard is inserted.
