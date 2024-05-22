@@ -1,0 +1,38 @@
+From 2ddb51234ca69c0e637b35071b4e760d1b72527a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20Dre=C3=9Fler?= <verdre@v0yd.nl>
+Date: Mon, 24 Feb 2020 11:19:28 +0100
+Subject: [PATCH] overview: Hide the overview on session mode hasOverview
+ changes
+
+If the sessionMode does not allow to show the overview, we should also
+hide an already visible overview.
+
+This fixes a bug where, if the lockscreen was shown while the overview
+was visible, the Ctrl+Alt+Tab popup would allow navigating inside the
+overview because the overview actor is still mapped.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/1043
+---
+ js/ui/overview.js | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/overview.js b/js/ui/overview.js
+index 5bad4cbd62..03cecb6dbc 100644
+--- a/js/ui/overview.js
++++ b/js/ui/overview.js
+@@ -196,7 +196,11 @@ var Overview = class {
+     }
+ 
+     _sessionUpdated() {
+-        this.isDummy = !Main.sessionMode.hasOverview;
++        const { hasOverview } = Main.sessionMode;
++        if (!hasOverview)
++            this.hide();
++
++        this.isDummy = !hasOverview;
+         this._createOverview();
+     }
+ 
+-- 
+2.43.0
+

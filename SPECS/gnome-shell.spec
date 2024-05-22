@@ -1,6 +1,6 @@
 Name:           gnome-shell
 Version:        3.32.2
-Release:        51%{?dist}
+Release:        55%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -70,6 +70,8 @@ Patch60: 0001-st-bin-Disallow-st_bin_set_child-with-already-parent.patch
 Patch61: 0001-layout-Initialize-regions-unconditionally.patch
 Patch62: fix-nm-device-settings.patch
 Patch63: owe-support.patch
+Patch64: 0001-windowMenu-Ignore-release.patch
+Patch65: 0001-overview-Hide-the-overview-on-session-mode-hasOvervi.patch
 
 # Backport JS invalid access warnings (#1651894, #1663171, #1642482, #1637622)
 Patch70: fix-invalid-access-warnings.patch
@@ -106,6 +108,9 @@ Patch20004: 0004-sessionMode-Allow-extensions-at-the-login-and-unlock.patch
 
 # CVE-2020-17489
 Patch30001: 0001-loginDialog-Reset-auth-prompt-on-vt-switch-before-fa.patch
+
+# Disable captive portal helper if WebKitGTK is not installed (RHEL-10488)
+Patch40001: optional-portal-helper.patch
 
 %define libcroco_version 0.6.8
 %define eds_version 3.17.2
@@ -284,9 +289,24 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_mandir}/man1/%{name}.1.gz
 
 %changelog
+* Thu Dec 21 2023 Florian Müllner <fmuellner@redhat.com> - 3.32.2-55
+- Hide the overview on lock
+  Resolves: RHEL-17349
+
+* Wed Nov 01 2023 Michael Catanzaro <mcatanzaro@redhat.com> - 3.32.2-54
+- Disable captive portal helper if WebKitGTK is not installed
+  Resolves: RHEL-10488
+
+* Wed Oct 18 2023 Florian Müllner <fmuellner@redhat.com> - 3.32.2-53
+- Fix window-menu closing immediately on open
+  Resolves: RHEL-2662
+
+* Mon Sep 18 2023 Florian Müllner <fmuellner@redhat.com> - 3.32.2-52
+- Bump release to avoid conflict with z-stream
+
 * Mon Sep 11 2023 Florian Müllner <fmuellner@redhat.com> - 3.32.2-51
 - Support OWE networks
-  Resolves: #2238480
+  Resolves: #2033620
 
 * Thu Dec 01 2022 Florian Müllner <fmuellner@redhat.com> - 3.32.2-50
 - Fix struts on login screen
