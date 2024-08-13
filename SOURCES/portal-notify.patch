@@ -1,0 +1,500 @@
+From 6238062c4be992e64c9aa227c8cb3b9385a9778f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 12 Jun 2024 13:13:41 +0200
+Subject: [PATCH 1/3] network: Split out CaptivePortalHandler class
+
+The handling of captive portals is going to be extended a bit,
+so split out a proper class instead of mixing it in with the
+indicator code.
+---
+ js/ui/status/network.js | 154 ++++++++++++++++++++++------------------
+ 1 file changed, 84 insertions(+), 70 deletions(-)
+
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index ef04f7f3dd..67e8f36397 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -1658,6 +1658,78 @@ var DeviceCategory = class extends PopupMenu.PopupMenuSection {
+     }
+ };
+ 
++class CaptivePortalHandler {
++    constructor(checkUri) {
++        this._checkUri = checkUri;
++        this._connectivityQueue = new Set();
++        this._portalHelperProxy = null;
++    }
++
++    addConnection(path) {
++        if (this._connectivityQueue.has(path))
++            return;
++
++        this._launchPortalHelper(path);
++    }
++
++    removeConnection(path) {
++        if (this._connectivityQueue.delete(path) && this._portalHelperProxy)
++            this._portalHelperProxy.CloseRemote(path);
++    }
++
++    _portalHelperDone(parameters) {
++        const [path, result] = parameters;
++
++        if (result === PortalHelperResult.CANCELLED) {
++            // Keep the connection in the queue, so the user is not
++            // spammed with more logins until we next flush the queue,
++            // which will happen once they choose a better connection
++            // or we get to full connectivity through other means
++        } else if (result === PortalHelperResult.COMPLETED) {
++            this.removeConnection(path);
++        } else if (result === PortalHelperResult.RECHECK) {
++            this.emit('recheck', path);
++        } else {
++            log(`Invalid result from portal helper: ${result}`);
++        }
++    }
++
++    _launchPortalHelper(path) {
++        const timestamp = global.get_current_time();
++        if (this._portalHelperProxy) {
++            this._portalHelperProxy.AuthenticateRemote(path, this._checkUri, timestamp);
++        } else {
++            new PortalHelperProxy(Gio.DBus.session,
++                'org.gnome.Shell.PortalHelper',
++                '/org/gnome/Shell/PortalHelper',
++                (proxy, error) => {
++                    if (error) {
++                        log(`Error launching the portal helper: ${e.message}`);
++                        return;
++                    }
++
++                    this._portalHelperProxy = proxy;
++                    this._portalHelperProxy.connectSignal('Done',
++                        (proxy, emitter, params) => {
++                            this._portalHelperDone(params);
++                        });
++                    this._portalHelperProxy.AuthenticateRemote(path, this._checkUri, timestamp);
++                });
++        }
++
++        this._connectivityQueue.add(path);
++    }
++
++    clear() {
++        if (this._portalHelperProxy) {
++            for (const item of this._connectivityQueue)
++                this._portalHelperProxy.CloseRemote(item);
++        }
++        this._connectivityQueue.clear();
++    }
++}
++Signals.addSignalMethods(CaptivePortalHandler.prototype);
++
+ var NMApplet = class extends PanelMenu.SystemIndicator {
+     constructor() {
+         super();
+@@ -1713,6 +1785,16 @@ var NMApplet = class extends PanelMenu.SystemIndicator {
+         this._vpnSection.connect('icon-changed', this._updateIcon.bind(this));
+         this.menu.addMenuItem(this._vpnSection.item);
+ 
++        const {connectivityCheckUri} = this._client;
++        this._portalHandler = new CaptivePortalHandler(connectivityCheckUri);
++        this._portalHandler.connect('recheck', async (o, path) => {
++            try {
++                const state = await this._client.check_connectivity_async(null);
++                if (state >= NM.ConnectivityState.FULL)
++                    this._portalHandler.removeConnection(path);
++            } catch (e) { }
++        });
++
+         this._readConnections();
+         this._readDevices();
+         this._syncNMState();
+@@ -2029,54 +2111,10 @@ var NMApplet = class extends PanelMenu.SystemIndicator {
+         this._syncConnectivity();
+     }
+ 
+-    _flushConnectivityQueue() {
+-        if (this._portalHelperProxy) {
+-            for (let item of this._connectivityQueue)
+-                this._portalHelperProxy.CloseRemote(item);
+-        }
+-
+-        this._connectivityQueue = [];
+-    }
+-
+-    _closeConnectivityCheck(path) {
+-        let index = this._connectivityQueue.indexOf(path);
+-
+-        if (index >= 0) {
+-            if (this._portalHelperProxy)
+-                this._portalHelperProxy.CloseRemote(path);
+-
+-            this._connectivityQueue.splice(index, 1);
+-        }
+-    }
+-
+-    _portalHelperDone(proxy, emitter, parameters) {
+-        let [path, result] = parameters;
+-
+-        if (result == PortalHelperResult.CANCELLED) {
+-            // Keep the connection in the queue, so the user is not
+-            // spammed with more logins until we next flush the queue,
+-            // which will happen once he chooses a better connection
+-            // or we get to full connectivity through other means
+-        } else if (result == PortalHelperResult.COMPLETED) {
+-            this._closeConnectivityCheck(path);
+-            return;
+-        } else if (result == PortalHelperResult.RECHECK) {
+-            this._client.check_connectivity_async(null, (client, result) => {
+-                try {
+-                    let state = client.check_connectivity_finish(result);
+-                    if (state >= NM.ConnectivityState.FULL)
+-                        this._closeConnectivityCheck(path);
+-                } catch(e) { }
+-            });
+-        } else {
+-            log('Invalid result from portal helper: ' + result);
+-        }
+-    }
+-
+     _syncConnectivity() {
+         if (this._mainConnection == null ||
+             this._mainConnection.state != NM.ActiveConnectionState.ACTIVATED) {
+-            this._flushConnectivityQueue();
++            this._portalHandler.clear();
+             return;
+         }
+ 
+@@ -2091,31 +2129,7 @@ var NMApplet = class extends PanelMenu.SystemIndicator {
+         if (!isPortal || Main.sessionMode.isGreeter)
+             return;
+ 
+-        let path = this._mainConnection.get_path();
+-        for (let item of this._connectivityQueue) {
+-            if (item == path)
+-                return;
+-        }
+-
+-        let timestamp = global.get_current_time();
+-        if (this._portalHelperProxy) {
+-            this._portalHelperProxy.AuthenticateRemote(path, '', timestamp);
+-        } else {
+-            new PortalHelperProxy(Gio.DBus.session, 'org.gnome.Shell.PortalHelper',
+-                                  '/org/gnome/Shell/PortalHelper', (proxy, error) => {
+-                                      if (error) {
+-                                          log('Error launching the portal helper: ' + error);
+-                                          return;
+-                                      }
+-
+-                                      this._portalHelperProxy = proxy;
+-                                      proxy.connectSignal('Done', this._portalHelperDone.bind(this));
+-
+-                                      proxy.AuthenticateRemote(path, '', timestamp);
+-                                  });
+-        }
+-
+-        this._connectivityQueue.push(path);
++        this._portalHandler.addConnection(this._mainConnection.get_path());
+     }
+ 
+     _updateIcon() {
+-- 
+2.45.2
+
+
+From c4cc99ff934e17b9c267022e6f4db25bb666df39 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 12 Jun 2024 13:13:41 +0200
+Subject: [PATCH 2/3] status/network: Show notification when detecting captive
+ portal
+
+When NetworkManager detects limited connectivity, we currently
+pop up the portal helper window immediately. This can both be
+disruptive when it happens unexpectedly, and unnoticeable
+when it happens during screen lock.
+
+In any case, it seems better to not pop up a window without
+explicit user action, so instead show a notification that
+launches the portal window when activated.
+
+Closes: https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/7688
+---
+ js/ui/status/network.js | 39 +++++++++++++++++++++++++++++++++++----
+ 1 file changed, 35 insertions(+), 4 deletions(-)
+
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index 67e8f36397..3f3158aff8 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -1662,19 +1662,44 @@ class CaptivePortalHandler {
+     constructor(checkUri) {
+         this._checkUri = checkUri;
+         this._connectivityQueue = new Set();
++        this._notifications = new Map();
+         this._portalHelperProxy = null;
+     }
+ 
+-    addConnection(path) {
+-        if (this._connectivityQueue.has(path))
++    addConnection(name, path) {
++        if (this._connectivityQueue.has(path) || this._notifications.has(path))
+             return;
+ 
+-        this._launchPortalHelper(path);
++        const source = new MessageTray.Source(
++            _('System'),
++            'emblem-system-symbolic');
++        Main.messageTray.add(source);
++
++        const notification = new MessageTray.Notification(
++            source, _('Sign Into Wi–Fi Network'), name);
++        notification.connect('activated',
++            () => this._onNotificationActivated(path).catch(logError));
++        notification.connect('destroy',
++            () => this._notifications.delete(path));
++        this._notifications.set(path, notification);
++        source.notify(notification);
+     }
+ 
++
+     removeConnection(path) {
+         if (this._connectivityQueue.delete(path) && this._portalHelperProxy)
+             this._portalHelperProxy.CloseRemote(path);
++        const notification = this._notifications.get(path);
++        if (notification)
++            notification.destroy(MessageTray.NotificationDestroyedReason.SOURCE_CLOSED);
++        this._notifications.delete(path);
++    }
++
++    _onNotificationActivated(path) {
++        this._launchPortalHelper(path);
++
++        Main.overview.hide();
++        Main.panel.closeCalendar();
+     }
+ 
+     _portalHelperDone(parameters) {
+@@ -1726,6 +1751,10 @@ class CaptivePortalHandler {
+                 this._portalHelperProxy.CloseRemote(item);
+         }
+         this._connectivityQueue.clear();
++
++        for (const n of this._notifications.values())
++            n.destroy(MessageTray.NotificationDestroyedReason.SOURCE_CLOSED);
++        this._notifications.clear();
+     }
+ }
+ Signals.addSignalMethods(CaptivePortalHandler.prototype);
+@@ -2129,7 +2158,9 @@ var NMApplet = class extends PanelMenu.SystemIndicator {
+         if (!isPortal || Main.sessionMode.isGreeter)
+             return;
+ 
+-        this._portalHandler.addConnection(this._mainConnection.get_path());
++        this._portalHandler.addConnection(
++            this._mainConnection.get_id(),
++            this._mainConnection.get_path());
+     }
+ 
+     _updateIcon() {
+-- 
+2.45.2
+
+
+From 3928c3ba5cd79bdcd9092d699af6b086cf00e76f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 12 Jun 2024 13:13:41 +0200
+Subject: [PATCH 3/3] build: Add option to disable portal-helper
+
+The portal login window uses WebKit, which is a security-sensitive
+component that not all vendors want to support.
+
+Support that case with a build option, and update the captive
+portal handler to use the user's default browser if the portal-helper
+is disabled.
+---
+ data/icons/meson.build  | 10 +++++++++-
+ data/meson.build        |  2 +-
+ js/meson.build          | 14 ++++++++------
+ js/misc/config.js.in    |  2 ++
+ js/misc/meson.build     |  1 +
+ js/ui/status/network.js | 15 +++++++++++----
+ meson.build             |  5 +++++
+ meson_options.txt       |  6 ++++++
+ src/meson.build         |  2 +-
+ 9 files changed, 44 insertions(+), 13 deletions(-)
+
+diff --git a/data/icons/meson.build b/data/icons/meson.build
+index eff6e4b530..277df017b2 100644
+--- a/data/icons/meson.build
++++ b/data/icons/meson.build
+@@ -1 +1,9 @@
+-install_subdir('hicolor', install_dir: icondir)
++excluded_icons=[]
++if not have_portal_helper
++  excluded_icons += [
++    'scalable/apps/org.gnome.Shell.CaptivePortal.svg',
++    'symbolic/apps/org.gnome.Shell.CaptivePortal-symbolic.svg',
++  ]
++endif
++install_subdir('hicolor',
++  install_dir: icondir, exclude_files: excluded_icons)
+diff --git a/data/meson.build b/data/meson.build
+index 33edb58c44..decc9fe091 100644
+--- a/data/meson.build
++++ b/data/meson.build
+@@ -4,7 +4,7 @@ desktop_files = [
+ ]
+ service_files = []
+ 
+-if have_networkmanager
++if have_portal_helper
+   desktop_files += 'org.gnome.Shell.PortalHelper.desktop'
+   service_files += 'org.gnome.Shell.PortalHelper.service'
+ endif
+diff --git a/js/meson.build b/js/meson.build
+index 4a572c53ff..ced1311805 100644
+--- a/js/meson.build
++++ b/js/meson.build
+@@ -7,12 +7,14 @@ js_resources = gnome.compile_resources(
+   dependencies: [config_js]
+ )
+ 
+-portal_resources = gnome.compile_resources(
+-  'portal-resources', 'portal-resources.gresource.xml',
+-  source_dir: ['.', meson.current_build_dir()],
+-  c_name: 'portal_js_resources',
+-  dependencies: [config_js]
+-)
++if have_portal_helper
++  portal_resources = gnome.compile_resources(
++    'portal-resources', 'portal-resources.gresource.xml',
++    source_dir: ['.', meson.current_build_dir()],
++    c_name: 'portal_js_resources',
++    dependencies: [config_js]
++  )
++endif
+ 
+ prefs_resources = gnome.compile_resources(
+   'prefs-resources', 'prefs-resources.gresource.xml',
+diff --git a/js/misc/config.js.in b/js/misc/config.js.in
+index 065d7a0a2a..dc14d6d095 100644
+--- a/js/misc/config.js.in
++++ b/js/misc/config.js.in
+@@ -8,6 +8,8 @@ var PACKAGE_VERSION = '@PACKAGE_VERSION@';
+ var HAVE_BLUETOOTH = @HAVE_BLUETOOTH@;
+ /* 1 if networkmanager is available, 0 otherwise */
+ var HAVE_NETWORKMANAGER = @HAVE_NETWORKMANAGER@;
++/* 1 if portal helper is enabled, 0 otherwise */
++var HAVE_PORTAL_HELPER = @HAVE_PORTAL_HELPER@;
+ /* gettext package */
+ var GETTEXT_PACKAGE = '@GETTEXT_PACKAGE@';
+ /* locale dir */
+diff --git a/js/misc/meson.build b/js/misc/meson.build
+index 5a4871762a..448a61556b 100644
+--- a/js/misc/meson.build
++++ b/js/misc/meson.build
+@@ -5,6 +5,7 @@ jsconf.set('GETTEXT_PACKAGE', meson.project_name())
+ jsconf.set('LIBMUTTER_API_VERSION', mutter_api_version)
+ jsconf.set10('HAVE_BLUETOOTH', bt_dep.found())
+ jsconf.set10('HAVE_NETWORKMANAGER', have_networkmanager)
++jsconf.set10('HAVE_PORTAL_HELPER', have_portal_helper)
+ jsconf.set('datadir', datadir)
+ jsconf.set('libexecdir', libexecdir)
+ jsconf.set('vpndir', vpndir)
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index 3f3158aff8..b2c6679119 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -4,6 +4,7 @@ const Mainloop = imports.mainloop;
+ const Signals = imports.signals;
+ 
+ const Animation = imports.ui.animation;
++const Config = imports.misc.config;
+ const Main = imports.ui.main;
+ const PanelMenu = imports.ui.panelMenu;
+ const PopupMenu = imports.ui.popupMenu;
+@@ -1678,7 +1679,7 @@ class CaptivePortalHandler {
+         const notification = new MessageTray.Notification(
+             source, _('Sign Into Wi–Fi Network'), name);
+         notification.connect('activated',
+-            () => this._onNotificationActivated(path).catch(logError));
++            () => this._onNotificationActivated(path));
+         notification.connect('destroy',
+             () => this._notifications.delete(path));
+         this._notifications.set(path, notification);
+@@ -1696,7 +1697,13 @@ class CaptivePortalHandler {
+     }
+ 
+     _onNotificationActivated(path) {
+-        this._launchPortalHelper(path);
++        const context = global.create_app_launch_context(
++            global.get_current_time(), -1);
++
++        if (Config.HAVE_PORTAL_HELPER)
++            this._launchPortalHelper(path, context);
++        else
++            Gio.AppInfo.launch_default_for_uri(this._checkUri, context);
+ 
+         Main.overview.hide();
+         Main.panel.closeCalendar();
+@@ -1719,8 +1726,8 @@ class CaptivePortalHandler {
+         }
+     }
+ 
+-    _launchPortalHelper(path) {
+-        const timestamp = global.get_current_time();
++    _launchPortalHelper(path, context) {
++        const {timestamp} = context;
+         if (this._portalHelperProxy) {
+             this._portalHelperProxy.AuthenticateRemote(path, this._checkUri, timestamp);
+         } else {
+diff --git a/meson.build b/meson.build
+index 2dd1bbc7a3..7a5e4eb603 100644
+--- a/meson.build
++++ b/meson.build
+@@ -121,6 +121,11 @@ else
+   have_networkmanager = false
+ endif
+ 
++have_portal_helper = get_option('portal_helper')
++if have_portal_helper and not have_networkmanager
++  error('Portal helper requires networkmanager support')
++endif
++
+ if get_option('systemd')
+   libsystemd_dep = dependency('libsystemd')
+   # XXX: see systemduserunitdir
+diff --git a/meson_options.txt b/meson_options.txt
+index 853ca98dce..1b8cd778ad 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -16,6 +16,12 @@ option('networkmanager',
+   description: 'Enable NetworkManager support'
+ )
+ 
++option('portal_helper',
++  type: 'boolean',
++  value: true,
++  description: 'Enable build-in network portal login'
++)
++
+ option('systemd',
+   type: 'boolean',
+   value: true,
+diff --git a/src/meson.build b/src/meson.build
+index 2b911d3476..83037af1f8 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -245,7 +245,7 @@ executable('gnome-shell-extension-prefs',
+ )
+ 
+ 
+-if have_networkmanager
++if have_portal_helper
+   executable('gnome-shell-portal-helper',
+     'gnome-shell-portal-helper.c', portal_resources,
+     c_args: tools_cflags,
+-- 
+2.45.2
+

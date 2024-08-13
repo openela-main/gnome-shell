@@ -1,6 +1,12 @@
+%if 0%{?rhel}
+%global portal_helper 0
+%else
+%global portal_helper 1
+%endif
+
 Name:           gnome-shell
 Version:        3.32.2
-Release:        55%{?dist}
+Release:        56%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -110,7 +116,7 @@ Patch20004: 0004-sessionMode-Allow-extensions-at-the-login-and-unlock.patch
 Patch30001: 0001-loginDialog-Reset-auth-prompt-on-vt-switch-before-fa.patch
 
 # Disable captive portal helper if WebKitGTK is not installed (RHEL-10488)
-Patch40001: optional-portal-helper.patch
+Patch40001: portal-notify.patch
 
 %define libcroco_version 0.6.8
 %define eds_version 3.17.2
@@ -223,7 +229,13 @@ easy to use experience.
 %autosetup -S git
 
 %build
-%meson
+%meson \
+%if %{portal_helper}
+  -Dportal_helper=true \
+%else
+  -Dportal_helper=false \
+%endif
+  %{nil}
 %meson_build
 
 %install
@@ -252,12 +264,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_datadir}/applications/org.gnome.Shell.desktop
 %{_datadir}/applications/gnome-shell-extension-prefs.desktop
 %{_datadir}/applications/evolution-calendar.desktop
-%{_datadir}/applications/org.gnome.Shell.PortalHelper.desktop
 %{_datadir}/gnome-control-center/keybindings/50-gnome-shell-system.xml
 %{_datadir}/gnome-shell/
 %{_datadir}/dbus-1/services/org.gnome.Shell.CalendarServer.service
 %{_datadir}/dbus-1/services/org.gnome.Shell.HotplugSniffer.service
-%{_datadir}/dbus-1/services/org.gnome.Shell.PortalHelper.service
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Extensions.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Introspect.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.PadOsd.xml
@@ -279,7 +289,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_libexecdir}/gnome-shell-calendar-server
 %{_libexecdir}/gnome-shell-perf-helper
 %{_libexecdir}/gnome-shell-hotplug-sniffer
-%{_libexecdir}/gnome-shell-portal-helper
 %{_libexecdir}/gnome-shell-overrides-migration.sh
 # Co own these directories instead of pulling in GConf
 # after all, we are trying to get rid of GConf with these files
@@ -288,7 +297,17 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_datadir}/GConf/gsettings/gnome-shell-overrides.convert
 %{_mandir}/man1/%{name}.1.gz
 
+%if %{portal_helper}
+%{_datadir}/applications/org.gnome.Shell.PortalHelper.desktop
+%{_datadir}/dbus-1/services/org.gnome.Shell.PortalHelper.service
+%{_libexecdir}/gnome-shell-portal-helper
+%endif
+
 %changelog
+* Wed Jul 10 2024 Florian Müllner <fmuellner@redhat.com> - 3.32.2-56
+- Only open portal login in response to user action
+  Resolves: RHEL-39097
+
 * Thu Dec 21 2023 Florian Müllner <fmuellner@redhat.com> - 3.32.2-55
 - Hide the overview on lock
   Resolves: RHEL-17349
