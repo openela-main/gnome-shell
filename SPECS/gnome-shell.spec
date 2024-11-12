@@ -1,8 +1,14 @@
 %global tarball_version %%(echo %{version} | tr '~' '.')
 
+%if 0%{?rhel}
+%global portal_helper 0
+%else
+%global portal_helper 1
+%endif
+
 Name:           gnome-shell
 Version:        40.10
-Release:        18%{?dist}
+Release:        21%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -58,9 +64,11 @@ Patch54: 0001-st-icon-Only-get-resource-scale-after-peeking-theme-.patch
 Patch55: 0001-window-tracker-Only-emit-tracked-windows-changed-on-.patch
 Patch56: owe-support.patch
 Patch57: 0001-windowMenu-Ignore-release.patch
-Patch58: optional-portal-helper.patch
+Patch58: portal-notify.patch
 Patch59: 0001-extensionSystem-Support-locking-down-extension-insta.patch
 Patch60: 0001-windowPreview-Override-with-window-icon-if-available.patch
+Patch61: screencast-bus-name.patch
+Patch62: fix-inhibit-shortcut-permission.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -207,7 +215,14 @@ easy to use experience.
 %autosetup -S git -n %{name}-%{tarball_version}
 
 %build
-%meson -Dextensions_app=false
+%meson \
+  -Dextensions_app=false \
+%if %{portal_helper}
+  -Dportal_helper=true \
+%else
+  -Dportal_helper=false \
+%endif
+  %{nil}
 %meson_build
 
 %install
@@ -236,7 +251,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_datadir}/applications/org.gnome.Shell.Extensions.desktop
 %{_datadir}/applications/org.gnome.Shell.desktop
 %{_datadir}/applications/evolution-calendar.desktop
-%{_datadir}/applications/org.gnome.Shell.PortalHelper.desktop
 %{_datadir}/bash-completion/completions/gnome-extensions
 %{_datadir}/gnome-control-center/keybindings/50-gnome-shell-system.xml
 %{_datadir}/gnome-shell/
@@ -245,7 +259,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_datadir}/dbus-1/services/org.gnome.Shell.Extensions.service
 %{_datadir}/dbus-1/services/org.gnome.Shell.HotplugSniffer.service
 %{_datadir}/dbus-1/services/org.gnome.Shell.Notifications.service
-%{_datadir}/dbus-1/services/org.gnome.Shell.PortalHelper.service
 %{_datadir}/dbus-1/services/org.gnome.Shell.Screencast.service
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Extensions.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Introspect.xml
@@ -269,7 +282,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_libexecdir}/gnome-shell-calendar-server
 %{_libexecdir}/gnome-shell-perf-helper
 %{_libexecdir}/gnome-shell-hotplug-sniffer
-%{_libexecdir}/gnome-shell-portal-helper
 %{_libexecdir}/gnome-shell-overrides-migration.sh
 # Co own these directories instead of pulling in GConf
 # after all, we are trying to get rid of GConf with these files
@@ -279,10 +291,28 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_mandir}/man1/gnome-extensions.1*
 %{_mandir}/man1/gnome-shell.1*
 
+%if %{portal_helper}
+%{_datadir}/applications/org.gnome.Shell.PortalHelper.desktop
+%{_datadir}/dbus-1/services/org.gnome.Shell.PortalHelper.service
+%{_libexecdir}/gnome-shell-portal-helper
+%endif
+
 %changelog
+* Wed Jul 10 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-21
+- Only open portal login in response to user action
+  Resolves: RHEL-39098
+
+* Wed May 15 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-20
+- Fix inhibit-shortcut permissions
+  Resolves: #RHEL-2031
+
+* Wed May 15 2024 Michael Catanzaro <mcatanzaro@redhat.com> - 40.10-19
+- Use correct bus name for screencast service
+  Related: RHEL-35775
+
 * Tue Mar 19 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-18
 - Use window icon in overview if available
-  Resolves: RHEL-29659
+  Resolves: RHEL-24713
 
 * Sat Feb 10 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-17
 - Allow restricting extension installation
