@@ -1,0 +1,56 @@
+From b1be295de28f45762a525d3ad3f91729295a7511 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@redhat.com>
+Date: Fri, 18 Oct 2024 13:20:23 +0200
+Subject: [PATCH] shell/window-tracker: Help mutter finding app info's for
+ windows
+
+---
+ src/shell-window-tracker.c | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/src/shell-window-tracker.c b/src/shell-window-tracker.c
+index bc14040d9b..8fbcca4269 100644
+--- a/src/shell-window-tracker.c
++++ b/src/shell-window-tracker.c
+@@ -651,6 +651,20 @@ shell_window_tracker_on_n_workspaces_changed (MetaWorkspaceManager *workspace_ma
+     }
+ }
+ 
++static GAppInfo *
++on_find_app_info (MetaDisplay        *display,
++                  MetaWindow         *window,
++                  ShellWindowTracker *tracker)
++{
++  g_autoptr (ShellApp) app = NULL;
++
++  app = get_app_for_window (tracker, window);
++  if (!app)
++    return NULL;
++
++  return g_object_ref (G_APP_INFO (shell_app_get_app_info (app)));
++}
++
+ static void
+ init_window_tracking (ShellWindowTracker *self)
+ {
+@@ -665,6 +679,17 @@ init_window_tracking (ShellWindowTracker *self)
+   g_signal_connect(display, "window-created",
+                    G_CALLBACK (on_window_created), self);
+ 
++  if (g_signal_lookup ("find-app-info", META_TYPE_DISPLAY))
++    {
++      g_debug ("Mutter app finding with the help of gnome-shell");
++      g_signal_connect (display, "find-app-info",
++                        G_CALLBACK (on_find_app_info), self);
++    }
++  else
++    {
++      g_debug ("No mutter app finding with the help of gnome-shell");
++    }
++
+   shell_window_tracker_on_n_workspaces_changed (workspace_manager, NULL, self);
+ }
+ 
+-- 
+2.44.0.501.g19981daefd.dirty
+

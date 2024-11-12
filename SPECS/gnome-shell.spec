@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        21%{?dist}
+Release:        22%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -69,6 +69,7 @@ Patch59: 0001-extensionSystem-Support-locking-down-extension-insta.patch
 Patch60: 0001-windowPreview-Override-with-window-icon-if-available.patch
 Patch61: screencast-bus-name.patch
 Patch62: fix-inhibit-shortcut-permission.patch
+Patch63: 0001-shell-window-tracker-Help-mutter-finding-app-info-s-.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -298,6 +299,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Fri Oct 18 2024 Jonas Ådahl <jadahl@redhat.com> - 40.10-22
+- Help mutter finding app info for windows
+  Resolves: RHEL-63000
+
 * Wed Jul 10 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-21
 - Only open portal login in response to user action
   Resolves: RHEL-39098
