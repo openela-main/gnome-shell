@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        22%{?dist}
+Release:        24%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -34,6 +34,7 @@ Patch15: gdm-networking.patch
 Patch16: login-screen-extensions.patch
 Patch17: fix-resetting-auth-prompt.patch
 Patch18: 0001-authPrompt-Disregard-smartcard-status-changes-events.patch
+Patch19: 0001-loginDialog-Show-session-menu-button-when-in-IN_PROG.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -70,6 +71,7 @@ Patch60: 0001-windowPreview-Override-with-window-icon-if-available.patch
 Patch61: screencast-bus-name.patch
 Patch62: fix-inhibit-shortcut-permission.patch
 Patch63: 0001-shell-window-tracker-Help-mutter-finding-app-info-s-.patch
+Patch64: 0001-dnd-Don-t-leak-a-signal-connection.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -299,6 +301,14 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Thu Feb 13 2025 Florian Müllner <fmuellner@redhat.com> - 40.10-24
+- Fix session button visibility after auth failure
+  Resolves: RHEL-4116
+
+* Tue Nov 19 2024 Florian Müllner <fmuellner@redhat.com> - 40.10-23
+- Fix leaked signal connection
+  Related: RHEL-22692
+
 * Fri Oct 18 2024 Jonas Ådahl <jadahl@redhat.com> - 40.10-22
 - Help mutter finding app info for windows
   Resolves: RHEL-63000

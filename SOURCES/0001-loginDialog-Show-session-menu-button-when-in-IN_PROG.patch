@@ -1,0 +1,41 @@
+From 44868c705fe499bf6a0aeeef90192e54175b88cb Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 13 Feb 2025 14:11:04 +0100
+Subject: [PATCH] loginDialog: Show session menu button when in IN_PROGRESS
+ status
+
+Commit c8bb45b added a new IN_PROGRESS status that replaces FAILED
+while the user is still allowed to retry authentication.
+
+We need to account for it when updating the visibility of the
+session menu button, otherwise the button disappears after
+entering a wrong password.
+
+Fixes: c8bb45b41c ("gdm: Limit verification cancellations to be conform to allowed-failures")
+Closes: https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/5784
+---
+ js/gdm/loginDialog.js | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 1df5c5eed0..36ecfe444f 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -890,8 +890,12 @@ var LoginDialog = GObject.registerClass({
+     }
+ 
+     _shouldShowSessionMenuButton() {
+-        if (this._authPrompt.verificationStatus != AuthPrompt.AuthPromptStatus.VERIFYING &&
+-            this._authPrompt.verificationStatus != AuthPrompt.AuthPromptStatus.VERIFICATION_FAILED)
++        const visibleStatuses = [
++            AuthPrompt.AuthPromptStatus.VERIFYING,
++            AuthPrompt.AuthPromptStatus.VERIFICATION_FAILED,
++            AuthPrompt.AuthPromptStatus.VERIFICATION_IN_PROGRESS,
++        ];
++        if (!visibleStatuses.includes(this._authPrompt.verificationStatus))
+             return false;
+ 
+         if (this._user && this._user.is_loaded && this._user.is_logged_in())
+-- 
+2.48.1
+

@@ -1,0 +1,28 @@
+From 97c77c6f222d9a7ca24bb32295f8debf65b303a1 Mon Sep 17 00:00:00 2001
+From: Zacharie DUBRULLE <dubrullezacharie@gmail.com>
+Date: Thu, 18 May 2023 11:40:32 +0000
+Subject: [PATCH] dnd: Don't leak a signal connection
+
+The handler is currently leaked when a drag monitor stops a
+motion event.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2770>
+---
+ js/ui/dnd.js | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/js/ui/dnd.js b/js/ui/dnd.js
+index cefde6f603..5027ed4325 100644
+--- a/js/ui/dnd.js
++++ b/js/ui/dnd.js
+@@ -562,6 +562,7 @@ var _Draggable = class _Draggable {
+                 let result = motionFunc(dragEvent);
+                 if (result != DragMotionResult.CONTINUE) {
+                     global.display.set_cursor(DRAG_CURSOR_MAP[result]);
++                    dragEvent.targetActor.disconnect(targetActorDestroyHandlerId);
+                     return GLib.SOURCE_REMOVE;
+                 }
+             }
+-- 
+2.47.0
+
