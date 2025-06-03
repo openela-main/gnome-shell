@@ -6,7 +6,7 @@
 
 Name:           gnome-shell
 Version:        3.32.2
-Release:        56%{?dist}
+Release:        57%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -78,6 +78,7 @@ Patch62: fix-nm-device-settings.patch
 Patch63: owe-support.patch
 Patch64: 0001-windowMenu-Ignore-release.patch
 Patch65: 0001-overview-Hide-the-overview-on-session-mode-hasOvervi.patch
+Patch66: 0001-st-theme-Reuse-stylesheets-if-possible.patch
 
 # Backport JS invalid access warnings (#1651894, #1663171, #1642482, #1637622)
 Patch70: fix-invalid-access-warnings.patch
@@ -304,6 +305,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Thu May 15 2025 Florian Müllner <fmuellner@redhat.com> - 3.32.2-57
+- Fix refcount issue in stylesheet tracking
+  Resolves: RHEL-91810
+
 * Wed Jul 10 2024 Florian Müllner <fmuellner@redhat.com> - 3.32.2-56
 - Only open portal login in response to user action
   Resolves: RHEL-39097
