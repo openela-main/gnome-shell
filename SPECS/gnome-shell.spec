@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        24%{?dist}
+Release:        25%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -72,6 +72,7 @@ Patch61: screencast-bus-name.patch
 Patch62: fix-inhibit-shortcut-permission.patch
 Patch63: 0001-shell-window-tracker-Help-mutter-finding-app-info-s-.patch
 Patch64: 0001-dnd-Don-t-leak-a-signal-connection.patch
+Patch65: 0001-st-theme-Reuse-stylesheets-if-possible.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -301,6 +302,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Mon May 19 2025 Florian Müllner <fmuellner@redhat.com> - 40.10-25
+- Fix refount issue in stylesheet tracking
+  Resolves: RHEL-92415
+
 * Thu Feb 13 2025 Florian Müllner <fmuellner@redhat.com> - 40.10-24
 - Fix session button visibility after auth failure
   Resolves: RHEL-4116
