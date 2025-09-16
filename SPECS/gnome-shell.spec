@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        25%{?dist}
+Release:        26%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -35,6 +35,7 @@ Patch16: login-screen-extensions.patch
 Patch17: fix-resetting-auth-prompt.patch
 Patch18: 0001-authPrompt-Disregard-smartcard-status-changes-events.patch
 Patch19: 0001-loginDialog-Show-session-menu-button-when-in-IN_PROG.patch
+Patch20: 0001-systemActions-Optionally-allow-restart-shutdown-on-l.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -302,6 +303,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Wed Jul 16 2025 Joan Torres <joantolo@redhat.com> - 40.10-26
+- Allow restart/shutdown on lock screen
+  Resolves: RHEL-107253
+
 * Mon May 19 2025 Florian Müllner <fmuellner@redhat.com> - 40.10-25
 - Fix refount issue in stylesheet tracking
   Resolves: RHEL-92415
