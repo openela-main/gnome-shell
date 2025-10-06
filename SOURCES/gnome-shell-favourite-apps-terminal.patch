@@ -1,0 +1,23 @@
+From c20b996f0cf89d4620d01fa777787b80b15c8a37 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Thu, 9 Mar 2017 14:44:32 +0100
+Subject: [PATCH] appFavorites: Add terminal
+
+---
+ data/default-apps/dash.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/data/default-apps/dash.txt b/data/default-apps/dash.txt
+index a926311701..5178256f6a 100644
+--- a/data/default-apps/dash.txt
++++ b/data/default-apps/dash.txt
+@@ -3,5 +3,6 @@ org.gnome.Calendar.desktop
+ org.gnome.Music.desktop
+ gnome.Nautilus.desktop
+ org.gnome.Software.desktop
++org.gnome.Ptyxis.desktop
+ org.gnome.TextEditor.desktop
+ org.gnome.Calculator.desktop
+-- 
+2.48.1
+

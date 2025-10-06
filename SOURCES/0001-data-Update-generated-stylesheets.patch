@@ -1,0 +1,56 @@
+From 170ccbd3d237bf980f46ae87e3da8238df9f8a3c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 16 Apr 2024 20:49:40 +0200
+Subject: [PATCH] data: Update generated stylesheets
+
+---
+ data/theme/gnome-shell-dark.css          | 3 +++
+ data/theme/gnome-shell-high-contrast.css | 3 +++
+ data/theme/gnome-shell-light.css         | 3 +++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/data/theme/gnome-shell-dark.css b/data/theme/gnome-shell-dark.css
+index 339adf7e7b..5dd7d29a3a 100644
+--- a/data/theme/gnome-shell-dark.css
++++ b/data/theme/gnome-shell-dark.css
+@@ -1720,6 +1720,9 @@ StScrollBar {
+       min-width: 0.5455em;
+       min-height: 0.5455em;
+       background-color: #ffffff; }
++    #panel .panel-button#panelActivities .activities-logo {
++      icon-size: 1.36375em;
++      padding: 0 6px; }
+     #panel .panel-button.screen-recording-indicator StBoxLayout, #panel .panel-button.screen-sharing-indicator StBoxLayout {
+       spacing: 0.409em; }
+     #panel .panel-button.screen-recording-indicator StIcon, #panel .panel-button.screen-sharing-indicator StIcon {
+diff --git a/data/theme/gnome-shell-high-contrast.css b/data/theme/gnome-shell-high-contrast.css
+index 4bb622aa26..8f94fa4101 100644
+--- a/data/theme/gnome-shell-high-contrast.css
++++ b/data/theme/gnome-shell-high-contrast.css
+@@ -1897,6 +1897,9 @@ StScrollBar {
+       min-width: 0.5455em;
+       min-height: 0.5455em;
+       background-color: #ffffff; }
++    #panel .panel-button#panelActivities .activities-logo {
++      icon-size: 1.36375em;
++      padding: 0 6px; }
+     #panel .panel-button.screen-recording-indicator StBoxLayout, #panel .panel-button.screen-sharing-indicator StBoxLayout {
+       spacing: 0.409em; }
+     #panel .panel-button.screen-recording-indicator StIcon, #panel .panel-button.screen-sharing-indicator StIcon {
+diff --git a/data/theme/gnome-shell-light.css b/data/theme/gnome-shell-light.css
+index 82a5b0bc18..128aa93dea 100644
+--- a/data/theme/gnome-shell-light.css
++++ b/data/theme/gnome-shell-light.css
+@@ -1720,6 +1720,9 @@ StScrollBar {
+       min-width: 0.5455em;
+       min-height: 0.5455em;
+       background-color: #282828; }
++    #panel .panel-button#panelActivities .activities-logo {
++      icon-size: 1.36375em;
++      padding: 0 6px; }
+     #panel .panel-button.screen-recording-indicator StBoxLayout, #panel .panel-button.screen-sharing-indicator StBoxLayout {
+       spacing: 0.409em; }
+     #panel .panel-button.screen-recording-indicator StIcon, #panel .panel-button.screen-sharing-indicator StIcon {
+-- 
+2.45.2
+

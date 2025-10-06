@@ -1,0 +1,35 @@
+From 8a6298a1e7f7d46abf86ddec8ca2c8edbe4a589f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 17 Sep 2014 07:11:12 +0200
+Subject: [PATCH] Replace Web with Firefox in default favorites
+
+---
+ data/default-apps/dash.txt | 2 +-
+ js/ui/appFavorites.js      | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/data/default-apps/dash.txt b/data/default-apps/dash.txt
+index d0c2c21eb8..a926311701 100644
+--- a/data/default-apps/dash.txt
++++ b/data/default-apps/dash.txt
+@@ -1,4 +1,4 @@
+-org.gnome.Epiphany.desktop
++org.mozilla.Firefox.desktop
+ org.gnome.Calendar.desktop
+ org.gnome.Music.desktop
+ gnome.Nautilus.desktop
+diff --git a/js/ui/appFavorites.js b/js/ui/appFavorites.js
+index e3a76dce96..b6525f3cc9 100644
+--- a/js/ui/appFavorites.js
++++ b/js/ui/appFavorites.js
+@@ -48,6 +48,7 @@ const RENAMED_DESKTOP_IDS = {
+     'gnotski.desktop': 'org.gnome.Klotski.desktop',
+     'gtali.desktop': 'org.gnome.Tali.desktop',
+     'iagno.desktop': 'org.gnome.Reversi.desktop',
++    'firefox.desktop': 'org.mozilla.firefox.desktop',
+     'nautilus.desktop': 'org.gnome.Nautilus.desktop',
+     'org.gnome.gnome-2048.desktop': 'org.gnome.TwentyFortyEight.desktop',
+     'org.gnome.taquin.desktop': 'org.gnome.Taquin.desktop',
+-- 
+2.48.1
+

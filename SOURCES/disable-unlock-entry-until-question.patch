@@ -1,0 +1,170 @@
+From 8a4efef39a0f48371c632d449688f29d06b9eed7 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Wed, 30 Sep 2015 12:51:24 -0400
+Subject: [PATCH 1/3] authPrompt: don't fade out auth messages if user types
+ password up front
+
+Right now we fade out any stale auth messages as soon as the user starts
+typing. This behavior doesn't really make sense if the user is typing up
+front, before a password is asked.
+---
+ js/gdm/authPrompt.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
+index 8a46559d90..9309f60886 100644
+--- a/js/gdm/authPrompt.js
++++ b/js/gdm/authPrompt.js
+@@ -211,7 +211,7 @@ export const AuthPrompt = GObject.registerClass({
+ 
+         [this._textEntry, this._passwordEntry].forEach(entry => {
+             entry.clutter_text.connect('text-changed', () => {
+-                if (!this._userVerifier.hasPendingMessages)
++                if (!this._userVerifier.hasPendingMessages && this._queryingService && !this._preemptiveAnswer)
+                     this._fadeOutMessage();
+             });
+ 
+-- 
+2.45.2
+
+
+From 007bbb694d4f30175caecbc9ada91515634bfd0b Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Wed, 30 Sep 2015 14:36:33 -0400
+Subject: [PATCH 2/3] authPrompt: don't spin unless answering question
+
+---
+ js/gdm/authPrompt.js | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
+index 9309f60886..3e72668967 100644
+--- a/js/gdm/authPrompt.js
++++ b/js/gdm/authPrompt.js
+@@ -275,13 +275,14 @@ export const AuthPrompt = GObject.registerClass({
+         this.verificationStatus = AuthPromptStatus.VERIFICATION_IN_PROGRESS;
+         this.updateSensitivity(false);
+ 
+-        if (shouldSpin)
+-            this.startSpinning();
++        if (this._queryingService) {
++            if (shouldSpin)
++                this.startSpinning();
+ 
+-        if (this._queryingService)
+             this._userVerifier.answerQuery(this._queryingService, this._entry.text);
+-        else
++        } else {
+             this._preemptiveAnswer = this._entry.text;
++        }
+ 
+         this.emit('next');
+     }
+-- 
+2.45.2
+
+
+From 92f66a5ff91e47d46a48d7ee51c0808f7ce1eaf9 Mon Sep 17 00:00:00 2001
+From: Ray Strode <rstrode@redhat.com>
+Date: Mon, 5 Oct 2015 15:26:18 -0400
+Subject: [PATCH 3/3] authPrompt: stop accepting preemptive answer if user
+ stops typing
+
+We only want to allow the user to type the preemptive password in
+one smooth motion.  If they start to type, and then stop typing,
+we should discard their preemptive password as expired.
+
+Typing ahead the password is just a convenience for users who don't
+want to manually lift the shift before typing their passwords, after
+all.
+---
+ js/gdm/authPrompt.js | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
+index 3e72668967..254b4dbb88 100644
+--- a/js/gdm/authPrompt.js
++++ b/js/gdm/authPrompt.js
+@@ -70,6 +70,8 @@ export const AuthPrompt = GObject.registerClass({
+         this._defaultButtonWellActor = null;
+         this._cancelledRetries = 0;
+ 
++        this._idleMonitor = global.backend.get_core_idle_monitor();
++
+         let reauthenticationOnly;
+         if (this._mode === AuthPromptMode.UNLOCK_ONLY)
+             reauthenticationOnly = true;
+@@ -127,8 +129,14 @@ export const AuthPrompt = GObject.registerClass({
+     }
+ 
+     _onDestroy() {
++        if (this._preemptiveAnswerWatchId) {
++            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
++            this._preemptiveAnswerWatchId = 0;
++        }
++
+         this._inactiveEntry.destroy();
+         this._inactiveEntry = null;
++
+         this._userVerifier.destroy();
+         this._userVerifier = null;
+     }
+@@ -282,6 +290,11 @@ export const AuthPrompt = GObject.registerClass({
+             this._userVerifier.answerQuery(this._queryingService, this._entry.text);
+         } else {
+             this._preemptiveAnswer = this._entry.text;
++
++            if (this._preemptiveAnswerWatchId) {
++                this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
++                this._preemptiveAnswerWatchId = 0;
++            }
+         }
+ 
+         this.emit('next');
+@@ -493,6 +506,11 @@ export const AuthPrompt = GObject.registerClass({
+     }
+ 
+     setQuestion(question) {
++        if (this._preemptiveAnswerWatchId) {
++            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
++            this._preemptiveAnswerWatchId = 0;
++        }
++
+         this._entry.hint_text = question;
+ 
+         this._authList.hide();
+@@ -614,6 +632,19 @@ export const AuthPrompt = GObject.registerClass({
+             this._updateEntry(false);
+     }
+ 
++    _onUserStoppedTypePreemptiveAnswer() {
++        if (!this._preemptiveAnswerWatchId ||
++            this._preemptiveAnswer ||
++            this._queryingService)
++            return;
++
++        this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
++        this._preemptiveAnswerWatchId = 0;
++
++        this._entry.text = '';
++        this.updateSensitivity(false);
++    }
++
+     reset() {
+         let oldStatus = this.verificationStatus;
+         this.verificationStatus = AuthPromptStatus.NOT_VERIFYING;
+@@ -621,6 +652,11 @@ export const AuthPrompt = GObject.registerClass({
+         this.cancelButton.can_focus = this._hasCancelButton;
+         this._preemptiveAnswer = null;
+ 
++        if (this._preemptiveAnswerWatchId)
++            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
++        this._preemptiveAnswerWatchId = this._idleMonitor.add_idle_watch(500,
++            this._onUserStoppedTypePreemptiveAnswer.bind(this));
++
+         if (this._userVerifier)
+             this._userVerifier.cancel();
+ 
+-- 
+2.45.2
+
