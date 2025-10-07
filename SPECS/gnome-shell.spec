@@ -6,7 +6,7 @@
 
 Name:           gnome-shell
 Version:        3.32.2
-Release:        57%{?dist}
+Release:        58%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -178,7 +178,7 @@ Requires:       gnome-bluetooth%{?_isa} >= %{gnome_bluetooth_version}
 Requires:       gnome-desktop3%{?_isa} >= %{gnome_desktop_version}
 %if 0%{?rhel} != 7
 # Disabled on RHEL 7 to allow logging into KDE session by default
-Requires:       gnome-session-xsession
+Recommends:       gnome-session-xsession
 %endif
 # wrapper script uses to restart old GNOME session if run --replace
 # from the command line
@@ -305,6 +305,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Thu Aug 21 2025 Joan Torres Lopez <joantolo@redhat.com> - 3.32.2-58
+- Don't hard depend on gnome-session-xsession to allow
+  using other session types, e.g. wayland
+  Resolves: RHEL-110531
+
 * Thu May 15 2025 Florian Müllner <fmuellner@redhat.com> - 3.32.2-57
 - Fix refcount issue in stylesheet tracking
   Resolves: RHEL-91810
