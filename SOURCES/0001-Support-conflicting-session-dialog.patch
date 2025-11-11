@@ -197,25 +197,44 @@ closed on its side, the new session will start.
 
 Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3134>
 ---
- js/gdm/loginDialog.js | 77 ++++++++++++++++++++++++++++++++++++++++---
- 1 file changed, 73 insertions(+), 4 deletions(-)
+ .../org.freedesktop.login1.Session.xml        |  1 +
+ js/gdm/loginDialog.js                         | 95 ++++++++++++++++++-
+ 2 files changed, 92 insertions(+), 4 deletions(-)
 
+diff --git a/data/dbus-interfaces/org.freedesktop.login1.Session.xml b/data/dbus-interfaces/org.freedesktop.login1.Session.xml
+index ecab4bb..16dee1c 100644
+--- a/data/dbus-interfaces/org.freedesktop.login1.Session.xml
++++ b/data/dbus-interfaces/org.freedesktop.login1.Session.xml
+@@ -6,6 +6,7 @@
+     <property name="Class" type="s" access="read"/>
+     <property name="Id" type="s" access="read"/>
+     <property name="Name" type="s" access="read"/>
++    <property name="User" type="(uo)" access="read"/>
+     <property name="Remote" type="b" access="read"/>
+     <property name="Type" type="s" access="read"/>
+     <property name="State" type="s" access="read"/>
 diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
-index 674ff24a5..25b86880d 100644
+index 6cf8133..e3dac97 100644
 --- a/js/gdm/loginDialog.js
 +++ b/js/gdm/loginDialog.js
-@@ -914,8 +914,8 @@ var LoginDialog = GObject.registerClass({
+@@ -916,8 +916,14 @@ var LoginDialog = GObject.registerClass({
  
              this._defaultSessionChangedId = this._greeter.connect('default-session-name-changed',
                                                                    this._onDefaultSessionChanged.bind(this));
 -            this._sessionOpenedId = this._greeter.connect('session-opened',
 -                                                          this._onSessionOpened.bind(this));
-+            this._sessionOpenedId = this._greeter.connect('session-opened-with-session-id',
-+                                                          this._onSessionOpenedWithSessionId.bind(this));
++            // Connect to the new signal if available, otherwise fall back to the old signal
++            let signalId = GObject.signal_lookup('session-opened-with-session-id', this._greeter.constructor.$gtype);
++            if (signalId !== 0)
++                this._sessionOpenedId = this._greeter.connect('session-opened-with-session-id',
++                                                              this._onSessionOpenedWithSessionId.bind(this));
++            else
++                this._sessionOpenedId = this._greeter.connect('session-opened',
++                                                              this._onSessionOpened.bind(this));
              this._timedLoginRequestedId = this._greeter.connect('timed-login-requested',
                                                                  this._onTimedLoginRequested.bind(this));
          }
-@@ -1053,6 +1053,28 @@ var LoginDialog = GObject.registerClass({
+@@ -1055,6 +1061,28 @@ var LoginDialog = GObject.registerClass({
              });
      }
  
@@ -244,7 +263,7 @@ index 674ff24a5..25b86880d 100644
      _startSession(serviceName) {
          this._bindOpacity();
          this.ease({
-@@ -1066,8 +1088,55 @@ var LoginDialog = GObject.registerClass({
+@@ -1068,8 +1096,67 @@ var LoginDialog = GObject.registerClass({
          });
      }
  
@@ -261,24 +280,27 @@ index 674ff24a5..25b86880d 100644
 +
 +    async _findConflictingSession(startingSessionId) {
 +        const loginManager = LoginManager.getLoginManager();
-+        const sessions = await this._listSessions();
-+        const [, , startingSessionOwner, ,] = sessions.find(([id, , , ,]) => id === startingSessionId);
-+        for (const session of sessions.map(([id, , user, , path]) => ({id, user, path}))) {
-+            if (startingSessionId === session.id)
++        let sessions = await this._listSessions();
++        sessions = sessions.map(([, , , , path]) => loginManager.getSession(path));
++        const startingSession = sessions.find(s => s.Id === startingSessionId);
++        for (const session of sessions) {
++            if (startingSession.Id === session.Id)
 +                continue;
 +
-+            if (startingSessionOwner !== session.user)
++            if (startingSession.User[0] !== session.User[0]) // this is the uid
 +                continue;
 +
-+            const sessionProxy = loginManager.getSession(session.path);
-+
-+            if (sessionProxy.Type !== 'wayland' && sessionProxy.Type !== 'x11')
++            if (startingSession.Type === 'x11' && session.Type === 'x11' &&
++                startingSession.Remote && session.Remote)
 +                continue;
 +
-+            if (sessionProxy.State !== 'active' && sessionProxy.State !== 'online')
++            if (session.Type !== 'wayland' && session.Type !== 'x11')
 +                continue;
 +
-+            return sessionProxy;
++            if (session.State !== 'active' && session.State !== 'online')
++                continue;
++
++            return session;
 +        }
 +
 +        return null;
@@ -299,11 +321,20 @@ index 674ff24a5..25b86880d 100644
 +            logError(error, `Failed to start session '${sessionId}'`);
 +            this._authPrompt.reset();
 +        }
++    }
++
++    async _onSessionOpened(client, serviceName, sessionId) {
++        try {
++            this._authPrompt.finish(() => this._startSession(serviceName));
++        } catch (error) {
++            logError(error, `Failed to start session '${sessionId}'`);
++            this._authPrompt.reset();
++        }
      }
  
      _waitForItemForUser(userName) {
 -- 
-2.49.0
+2.51.0
 
 
 From b5dc399c0cdbecad7bd91bbae2287154e934981a Mon Sep 17 00:00:00 2001

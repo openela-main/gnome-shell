@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        28%{?dist}
+Release:        31%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -36,6 +36,7 @@ Patch17: fix-resetting-auth-prompt.patch
 Patch18: 0001-authPrompt-Disregard-smartcard-status-changes-events.patch
 Patch19: 0001-loginDialog-Show-session-menu-button-when-in-IN_PROG.patch
 Patch20: 0001-systemActions-Optionally-allow-restart-shutdown-on-l.patch
+Patch21: 0001-authPrompt-Connect-disable-show-password-key-with-pa.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -304,6 +305,19 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Wed Oct 22 2025 Joan Torres <joantolo@redhat.com> - 40.10-31
+- Don't fail if disable-show-password doesn't exist
+  Related: RHEL-109190
+
+* Thu Oct 2 2025 Joan Torres <joantolo@redhat.com> - 40.10-30
+- Fix regression on multiple remote sessions and same user
+  Also, add missing fix to keep API/ABI compatibility on GDM greeter proxy.
+  Resolves: RHEL-109190
+
+* Tue Oct 21 2025 Joan Torres <joantolo@redhat.com> - 40.10-29
+- Allow disabling showing password on login/unlock screens
+  Resolves: RHEL-123139
+
 * Wed Jul 16 2025 Joan Torres <joantolo@redhat.com> - 40.10-28
 - Allow restart/shutdown on lock screen
   Resolves: RHEL-103984
