@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        26%{?dist}
+Release:        28%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -74,6 +74,7 @@ Patch62: fix-inhibit-shortcut-permission.patch
 Patch63: 0001-shell-window-tracker-Help-mutter-finding-app-info-s-.patch
 Patch64: 0001-dnd-Don-t-leak-a-signal-connection.patch
 Patch65: 0001-st-theme-Reuse-stylesheets-if-possible.patch
+Patch66: 0001-Support-conflicting-session-dialog.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -303,13 +304,22 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
-* Wed Jul 16 2025 Joan Torres <joantolo@redhat.com> - 40.10-26
+* Wed Jul 16 2025 Joan Torres <joantolo@redhat.com> - 40.10-28
 - Allow restart/shutdown on lock screen
-  Resolves: RHEL-107253
+  Resolves: RHEL-103984
 
-* Mon May 19 2025 Florian Müllner <fmuellner@redhat.com> - 40.10-25
+* Thu Jun 19 2025 Joan Torres <joantolo@redhat.com> - 40.10-27
+- session-opened signature is reverted to keep ABI compatibility,
+  use session-opened-with-session-id instead
+  Related: RHEL-92307
+
+* Fri May 09 2025 Joan Torres <joantolo@redhat.com> - 40.10-26
+- Support conflicting session dialog
+  Resolves: RHEL-92307
+
+* Mon May 05 2025 Florian Müllner <fmuellner@redhat.com> - 40.10-25
 - Fix refount issue in stylesheet tracking
-  Resolves: RHEL-92415
+  Resolves: RHEL-69401
 
 * Thu Feb 13 2025 Florian Müllner <fmuellner@redhat.com> - 40.10-24
 - Fix session button visibility after auth failure

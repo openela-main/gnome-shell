@@ -1,0 +1,402 @@
+From fd6f5b9834ffbd417b0543ac89ae0f8aeb67ff04 Mon Sep 17 00:00:00 2001
+From: Joan Torres <joantolo@redhat.com>
+Date: Thu, 8 May 2025 12:51:58 +0200
+Subject: [PATCH 1/4] loginManager: Add session-removed signal and getSession
+ method
+
+These changes will be used by the next commit when displaying a
+conflicting session dialog.
+
+session-removed signal will be used to close the conflicting session dialog
+if it's not needed anymore.
+
+getSession method will be used when a session is opened, to check if
+there's already a conflicting opened session.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3134>
+---
+ js/misc/loginManager.js | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/js/misc/loginManager.js b/js/misc/loginManager.js
+index 55e928986..3a91a4e8c 100644
+--- a/js/misc/loginManager.js
++++ b/js/misc/loginManager.js
+@@ -97,6 +97,8 @@ var LoginManagerSystemd = class {
+                                                '/org/freedesktop/login1/user/self');
+         this._proxy.connectSignal('PrepareForSleep',
+                                   this._prepareForSleep.bind(this));
++        this._proxy.connectSignal('SessionRemoved',
++                                  this._sessionRemoved.bind(this));
+     }
+ 
+     getCurrentSessionProxy(callback) {
+@@ -184,6 +186,10 @@ var LoginManagerSystemd = class {
+         });
+     }
+ 
++    getSession(objectPath) {
++        return new SystemdLoginSession(Gio.DBus.system, 'org.freedesktop.login1', objectPath);
++    }
++
+     suspend() {
+         this._proxy.SuspendRemote(true);
+     }
+@@ -206,6 +212,10 @@ var LoginManagerSystemd = class {
+     _prepareForSleep(proxy, sender, [aboutToSuspend]) {
+         this.emit('prepare-for-sleep', aboutToSuspend);
+     }
++
++    _sessionRemoved(proxy, sender, [sessionId]) {
++        this.emit('session-removed', sessionId);
++    }
+ };
+ Signals.addSignalMethods(LoginManagerSystemd.prototype);
+ 
+@@ -231,6 +241,10 @@ var LoginManagerDummy = class {
+         asyncCallback([]);
+     }
+ 
++    getSession(_objectPath) {
++        return null;
++    }
++
+     suspend() {
+         this.emit('prepare-for-sleep', true);
+         this.emit('prepare-for-sleep', false);
+-- 
+2.49.0
+
+
+From f7d21a1ed99758c5f855adf9e0404a805f0fe497 Mon Sep 17 00:00:00 2001
+From: Joan Torres <joantolo@redhat.com>
+Date: Thu, 8 May 2025 13:10:19 +0200
+Subject: [PATCH 2/4] loginDialog: Add ConflictingSessionDialog
+
+This dialog will be used by the next commit when a session is being opened but
+there's already a conflicting session opened.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3134>
+---
+ .../org.freedesktop.login1.Session.xml        |  1 +
+ js/gdm/loginDialog.js                         | 64 +++++++++++++++++++
+ 2 files changed, 65 insertions(+)
+
+diff --git a/data/dbus-interfaces/org.freedesktop.login1.Session.xml b/data/dbus-interfaces/org.freedesktop.login1.Session.xml
+index 6fab81794..ecab4bbaa 100644
+--- a/data/dbus-interfaces/org.freedesktop.login1.Session.xml
++++ b/data/dbus-interfaces/org.freedesktop.login1.Session.xml
+@@ -5,6 +5,7 @@
+     <property name="Active" type="b" access="read"/>
+     <property name="Class" type="s" access="read"/>
+     <property name="Id" type="s" access="read"/>
++    <property name="Name" type="s" access="read"/>
+     <property name="Remote" type="b" access="read"/>
+     <property name="Type" type="s" access="read"/>
+     <property name="State" type="s" access="read"/>
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 241721ff7..674ff24a5 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -28,6 +28,7 @@ const GdmUtil = imports.gdm.util;
+ const Layout = imports.ui.layout;
+ const LoginManager = imports.misc.loginManager;
+ const Main = imports.ui.main;
++const ModalDialog = imports.ui.modalDialog;
+ const PopupMenu = imports.ui.popupMenu;
+ const Realmd = imports.gdm.realmd;
+ const UserWidget = imports.ui.userWidget;
+@@ -400,6 +401,69 @@ var SessionMenuButton = GObject.registerClass({
+     }
+ });
+ 
++var ConflictingSessionDialog = GObject.registerClass({
++    Signals: {
++        'cancel': {},
++        'force-stop': {},
++    },
++}, class ConflictingSessionDialog extends ModalDialog.ModalDialog {
++    _init(conflictingSession) {
++        super._init();
++
++        const userName = conflictingSession.Name;
++        let bannerText;
++        /* Translators: is running for <username> */
++        bannerText = _('Login is not possible because a session is already running for %s. To login, you must log out from the session or force stop it.').format(userName);
++
++        let textLayout = new St.BoxLayout({
++            vertical: true,
++            x_expand: true,
++            style: 'spacing: 20px;',
++        });
++
++        let title = new St.Label({
++            text: _('Session Already Running'),
++            style: 'text-align: center;'
++            + 'font-size: 18pt;'
++            + 'font-weight: 800;'
++            + 'margin-bottom: 5px;' });
++
++        let banner = new St.Label({
++            text: bannerText,
++            style: 'text-align: center',
++        });
++        banner.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
++        banner.clutter_text.line_wrap = true;
++
++        let warningBanner = new St.Label({
++            text: _('Force stopping will quit any running apps and processes, and could result in data loss'),
++            style: 'text-align: center; color: #f57900;',
++        });
++        warningBanner.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
++        warningBanner.clutter_text.line_wrap = true;
++
++        textLayout.add_child(title);
++        textLayout.add_child(banner);
++        textLayout.add_child(warningBanner);
++        this.contentLayout.add_child(textLayout);
++
++        this.addButton({
++            label: _('Cancel'),
++            action: () => {
++                this.emit('cancel');
++            },
++            key: Clutter.KEY_Escape,
++            default: true,
++        });
++        this.addButton({
++            label: _('Force Stop'),
++            action: () => {
++                this.emit('force-stop');
++            },
++        });
++    }
++});
++
+ var LoginDialog = GObject.registerClass({
+     Signals: {
+         'failed': {},
+-- 
+2.49.0
+
+
+From d849667b91d252cc9e029e8e1b2aaf4045e3890c Mon Sep 17 00:00:00 2001
+From: Joan Torres <joantolo@redhat.com>
+Date: Thu, 8 May 2025 13:17:40 +0200
+Subject: [PATCH 3/4] loginDialog: On login, allow logout a conflicting session
+
+When opening a session, find if there's already a session opened for the
+same user with the help of Loginmanager.
+When it's found, display the conflicting session dialog.
+
+The logout dialog allows shutting down the conflicting session using the
+greeter dbus method "StopConflictingSession".
+
+If the dialog is already opened and the conflicting session has been
+closed on its side, the new session will start.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3134>
+---
+ js/gdm/loginDialog.js | 77 ++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 73 insertions(+), 4 deletions(-)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 674ff24a5..25b86880d 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -914,8 +914,8 @@ var LoginDialog = GObject.registerClass({
+ 
+             this._defaultSessionChangedId = this._greeter.connect('default-session-name-changed',
+                                                                   this._onDefaultSessionChanged.bind(this));
+-            this._sessionOpenedId = this._greeter.connect('session-opened',
+-                                                          this._onSessionOpened.bind(this));
++            this._sessionOpenedId = this._greeter.connect('session-opened-with-session-id',
++                                                          this._onSessionOpenedWithSessionId.bind(this));
+             this._timedLoginRequestedId = this._greeter.connect('timed-login-requested',
+                                                                 this._onTimedLoginRequested.bind(this));
+         }
+@@ -1053,6 +1053,28 @@ var LoginDialog = GObject.registerClass({
+             });
+     }
+ 
++    _showConflictingSessionDialog(serviceName, conflictingSession) {
++        let conflictingSessionDialog = new ConflictingSessionDialog(conflictingSession);
++
++        conflictingSessionDialog.connect('cancel', () => {
++            this._authPrompt.reset();
++            conflictingSessionDialog.close();
++        });
++        conflictingSessionDialog.connect('force-stop', () => {
++            this._greeter.call_stop_conflicting_session_sync(null);
++        });
++
++        const loginManager = LoginManager.getLoginManager();
++        loginManager.connect('session-removed', (lm, sessionId) => {
++            if (sessionId === conflictingSession.Id) {
++                conflictingSessionDialog.close();
++                this._authPrompt.finish(() => this._startSession(serviceName));
++            }
++        }, conflictingSessionDialog);
++
++        conflictingSessionDialog.open();
++    }
++
+     _startSession(serviceName) {
+         this._bindOpacity();
+         this.ease({
+@@ -1066,8 +1088,55 @@ var LoginDialog = GObject.registerClass({
+         });
+     }
+ 
+-    _onSessionOpened(client, serviceName) {
+-        this._authPrompt.finish(() => this._startSession(serviceName));
++    _listSessions() {
++        const loginManager = LoginManager.getLoginManager();
++        return new Promise(resolve => {
++            loginManager.listSessions(sessions => {
++                resolve(sessions);
++            });
++        });
++    }
++
++    async _findConflictingSession(startingSessionId) {
++        const loginManager = LoginManager.getLoginManager();
++        const sessions = await this._listSessions();
++        const [, , startingSessionOwner, ,] = sessions.find(([id, , , ,]) => id === startingSessionId);
++        for (const session of sessions.map(([id, , user, , path]) => ({id, user, path}))) {
++            if (startingSessionId === session.id)
++                continue;
++
++            if (startingSessionOwner !== session.user)
++                continue;
++
++            const sessionProxy = loginManager.getSession(session.path);
++
++            if (sessionProxy.Type !== 'wayland' && sessionProxy.Type !== 'x11')
++                continue;
++
++            if (sessionProxy.State !== 'active' && sessionProxy.State !== 'online')
++                continue;
++
++            return sessionProxy;
++        }
++
++        return null;
++    }
++
++    async _onSessionOpenedWithSessionId(client, serviceName, sessionId) {
++        try {
++            if (sessionId) {
++                const conflictingSession = await this._findConflictingSession(sessionId);
++                if (conflictingSession) {
++                    this._showConflictingSessionDialog(serviceName, conflictingSession);
++                    return;
++                }
++            }
++
++            this._authPrompt.finish(() => this._startSession(serviceName));
++        } catch (error) {
++            logError(error, `Failed to start session '${sessionId}'`);
++            this._authPrompt.reset();
++        }
+     }
+ 
+     _waitForItemForUser(userName) {
+-- 
+2.49.0
+
+
+From b5dc399c0cdbecad7bd91bbae2287154e934981a Mon Sep 17 00:00:00 2001
+From: Joan Torres <joantolo@redhat.com>
+Date: Thu, 8 May 2025 13:22:30 +0200
+Subject: [PATCH 4/4] loginDialog: Close conflicting session dialog after 60
+ secs
+
+When the stop conflicting session dialog is opened, use a timeout of 60
+seconds to close it.
+This is an attempt to keep security in the situation where the user leaves,
+the system is left unsupervised and the dialog is opened; allowing anyone
+to stop the old session and start a new session.
+
+When the dialog is closed by the timeout, a notification apperars informing
+about that.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3134>
+---
+ js/gdm/loginDialog.js | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 25b86880d..83a3bb09d 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -28,6 +28,7 @@ const GdmUtil = imports.gdm.util;
+ const Layout = imports.ui.layout;
+ const LoginManager = imports.misc.loginManager;
+ const Main = imports.ui.main;
++const MessageTray = imports.ui.messageTray;
+ const ModalDialog = imports.ui.modalDialog;
+ const PopupMenu = imports.ui.popupMenu;
+ const Realmd = imports.gdm.realmd;
+@@ -36,6 +37,7 @@ const UserWidget = imports.ui.userWidget;
+ const _FADE_ANIMATION_TIME = 250;
+ const _SCROLL_ANIMATION_TIME = 500;
+ const _TIMED_LOGIN_IDLE_THRESHOLD = 5.0;
++const _CONFLICTING_SESSION_DIALOG_TIMEOUT = 60;
+ 
+ var UserListItem = GObject.registerClass({
+     Signals: { 'activate': {} },
+@@ -1044,6 +1046,22 @@ var LoginDialog = GObject.registerClass({
+             });
+     }
+ 
++    _notifyConflictingSessionDialogClosed() {
++        const source = new MessageTray.SystemNotificationSource();
++        Main.messageTray.add(source);
++
++        this._conflictingSessionNotification = new MessageTray.Notification(source,
++            _('Login Attempt Timed Out'),
++            _('Login took too long, please try again'));
++        this._conflictingSessionNotification.setUrgency(MessageTray.Urgency.CRITICAL);
++        this._conflictingSessionNotification.setTransient(true);
++        this._conflictingSessionNotification.connect('destroy', () => {
++            this._conflictingSessionNotification = null;
++        });
++
++        source.showNotification(this._conflictingSessionNotification);
++    }
++
+     _showConflictingSessionDialog(serviceName, conflictingSession) {
+         let conflictingSessionDialog = new ConflictingSessionDialog(conflictingSession);
+ 
+@@ -1063,6 +1081,17 @@ var LoginDialog = GObject.registerClass({
+             }
+         }, conflictingSessionDialog);
+ 
++        const closeDialogTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, _CONFLICTING_SESSION_DIALOG_TIMEOUT, () => {
++            this._notifyConflictingSessionDialogClosed();
++            conflictingSessionDialog.close();
++            this._authPrompt.reset();
++            return GLib.SOURCE_REMOVE;
++        });
++
++        conflictingSessionDialog.connect('closed', () => {
++            GLib.source_remove(closeDialogTimeoutId);
++        });
++
+         conflictingSessionDialog.open();
+     }
+ 
+@@ -1318,6 +1347,9 @@ var LoginDialog = GObject.registerClass({
+ 
+         this._updateCancelButton();
+ 
++        if (this._conflictingSessionNotification)
++            this._conflictingSessionNotification.destroy();
++
+         let batch = new Batch.ConcurrentBatch(this, [GdmUtil.cloneAndFadeOutActor(this._userSelectionBox),
+                                                      this._beginVerificationForItem(activatedItem)]);
+         batch.run();
+-- 
+2.49.0
+
