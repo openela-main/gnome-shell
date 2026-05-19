@@ -1,4 +1,4 @@
-From 2060b040f91c3751861a1c1b985c5fe8cc891d58 Mon Sep 17 00:00:00 2001
+From e50bb4482d8171b3cad748706b930684e0edccae Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
 Date: Thu, 29 Oct 2020 18:21:06 +0100
 Subject: [PATCH] main: Dump stack on segfaults by default
@@ -8,10 +8,10 @@ Subject: [PATCH] main: Dump stack on segfaults by default
  1 file changed, 6 insertions(+), 2 deletions(-)
 
 diff --git a/src/main.c b/src/main.c
-index 4be47258eb..b324b6b96a 100644
+index af4fa8597e..03772ec7fb 100644
 --- a/src/main.c
 +++ b/src/main.c
-@@ -47,6 +47,7 @@ static char *script_path = NULL;
+@@ -46,6 +46,7 @@ static char *script_path = NULL;
  #define DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER 1
  #define DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER 4
  
@@ -19,7 +19,7 @@ index 4be47258eb..b324b6b96a 100644
  enum {
    SHELL_DEBUG_BACKTRACE_WARNINGS = 1,
    SHELL_DEBUG_BACKTRACE_SEGFAULTS = 2,
-@@ -381,8 +382,11 @@ shell_init_debug (const char *debug_env)
+@@ -364,8 +365,11 @@ shell_init_debug (const char *debug_env)
      { "backtrace-segfaults", SHELL_DEBUG_BACKTRACE_SEGFAULTS },
    };
  
@@ -34,5 +34,5 @@ index 4be47258eb..b324b6b96a 100644
  
  static GLogWriterOutput
 -- 
-2.45.2
+2.51.1
 

@@ -1,4 +1,4 @@
-From 17e77f1729b8542c46d5020d55edce4daf7ab24a Mon Sep 17 00:00:00 2001
+From 688687465d7f45da81847554221fb8c72d079510 Mon Sep 17 00:00:00 2001
 From: Ray Strode <rstrode@redhat.com>
 Date: Fri, 3 Jul 2015 13:54:36 -0400
 Subject: [PATCH] screenShield: unblank when inserting smartcard
@@ -13,10 +13,10 @@ action to get the screen to unblank.
  1 file changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/js/ui/screenShield.js b/js/ui/screenShield.js
-index d2236fb900..b62440dff6 100644
+index 2087c393ed..428421b370 100644
 --- a/js/ui/screenShield.js
 +++ b/js/ui/screenShield.js
-@@ -94,8 +94,10 @@ export class ScreenShield extends Signals.EventEmitter {
+@@ -92,8 +92,10 @@ export class ScreenShield extends Signals.EventEmitter {
          this._smartcardManager = SmartcardManager.getSmartcardManager();
          this._smartcardManager.connect('smartcard-inserted',
              (manager, token) => {
@@ -29,5 +29,5 @@ index d2236fb900..b62440dff6 100644
  
          this._credentialManagers = {};
 -- 
-2.45.2
+2.51.1
 

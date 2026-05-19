@@ -1,4 +1,4 @@
-From 15df1086028087e5a81830323137a8730d2c5888 Mon Sep 17 00:00:00 2001
+From 29f77afc6d76cadf3f0cac7b0e741049af21e86d Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
 Date: Tue, 14 Mar 2017 17:04:36 +0100
 Subject: [PATCH] windowMenu: Bring back workspaces submenu for static
@@ -13,10 +13,10 @@ are used.
  1 file changed, 17 insertions(+)
 
 diff --git a/js/ui/windowMenu.js b/js/ui/windowMenu.js
-index c69c183d7c..2db3962012 100644
+index c140dee4dd..6e28244723 100644
 --- a/js/ui/windowMenu.js
 +++ b/js/ui/windowMenu.js
-@@ -153,6 +153,23 @@ export class WindowMenu extends PopupMenu.PopupMenu {
+@@ -138,6 +138,23 @@ export class WindowMenu extends PopupMenu.PopupMenu {
                          window.change_workspace(workspace.get_neighbor(dir));
                      });
                  }
@@ -41,5 +41,5 @@ index c69c183d7c..2db3962012 100644
          }
  
 -- 
-2.45.2
+2.51.1
 

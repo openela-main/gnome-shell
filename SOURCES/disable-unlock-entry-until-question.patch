@@ -1,4 +1,4 @@
-From 8a4efef39a0f48371c632d449688f29d06b9eed7 Mon Sep 17 00:00:00 2001
+From 2af9a2832992b7b89465b47cf9adb979b8d6b087 Mon Sep 17 00:00:00 2001
 From: Ray Strode <rstrode@redhat.com>
 Date: Wed, 30 Sep 2015 12:51:24 -0400
 Subject: [PATCH 1/3] authPrompt: don't fade out auth messages if user types
@@ -12,10 +12,10 @@ front, before a password is asked.
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
-index 8a46559d90..9309f60886 100644
+index 800e2f1851..7ee8186dcc 100644
 --- a/js/gdm/authPrompt.js
 +++ b/js/gdm/authPrompt.js
-@@ -211,7 +211,7 @@ export const AuthPrompt = GObject.registerClass({
+@@ -217,7 +217,7 @@ export const AuthPrompt = GObject.registerClass({
  
          [this._textEntry, this._passwordEntry].forEach(entry => {
              entry.clutter_text.connect('text-changed', () => {
@@ -25,10 +25,10 @@ index 8a46559d90..9309f60886 100644
              });
  
 -- 
-2.45.2
+2.51.1
 
 
-From 007bbb694d4f30175caecbc9ada91515634bfd0b Mon Sep 17 00:00:00 2001
+From 691685e9582e23cce382841c1d66c44ea56ceb33 Mon Sep 17 00:00:00 2001
 From: Ray Strode <rstrode@redhat.com>
 Date: Wed, 30 Sep 2015 14:36:33 -0400
 Subject: [PATCH 2/3] authPrompt: don't spin unless answering question
@@ -38,10 +38,10 @@ Subject: [PATCH 2/3] authPrompt: don't spin unless answering question
  1 file changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
-index 9309f60886..3e72668967 100644
+index 7ee8186dcc..97b276dbf9 100644
 --- a/js/gdm/authPrompt.js
 +++ b/js/gdm/authPrompt.js
-@@ -275,13 +275,14 @@ export const AuthPrompt = GObject.registerClass({
+@@ -281,13 +281,14 @@ export const AuthPrompt = GObject.registerClass({
          this.verificationStatus = AuthPromptStatus.VERIFICATION_IN_PROGRESS;
          this.updateSensitivity(false);
  
@@ -61,10 +61,10 @@ index 9309f60886..3e72668967 100644
          this.emit('next');
      }
 -- 
-2.45.2
+2.51.1
 
 
-From 92f66a5ff91e47d46a48d7ee51c0808f7ce1eaf9 Mon Sep 17 00:00:00 2001
+From 60c374af34ec60a3aa0403888d70a835774209af Mon Sep 17 00:00:00 2001
 From: Ray Strode <rstrode@redhat.com>
 Date: Mon, 5 Oct 2015 15:26:18 -0400
 Subject: [PATCH 3/3] authPrompt: stop accepting preemptive answer if user
@@ -82,10 +82,10 @@ all.
  1 file changed, 36 insertions(+)
 
 diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
-index 3e72668967..254b4dbb88 100644
+index 97b276dbf9..2bf722b140 100644
 --- a/js/gdm/authPrompt.js
 +++ b/js/gdm/authPrompt.js
-@@ -70,6 +70,8 @@ export const AuthPrompt = GObject.registerClass({
+@@ -69,6 +69,8 @@ export const AuthPrompt = GObject.registerClass({
          this._defaultButtonWellActor = null;
          this._cancelledRetries = 0;
  
@@ -94,7 +94,7 @@ index 3e72668967..254b4dbb88 100644
          let reauthenticationOnly;
          if (this._mode === AuthPromptMode.UNLOCK_ONLY)
              reauthenticationOnly = true;
-@@ -127,8 +129,14 @@ export const AuthPrompt = GObject.registerClass({
+@@ -130,8 +132,14 @@ export const AuthPrompt = GObject.registerClass({
      }
  
      _onDestroy() {
@@ -108,8 +108,8 @@ index 3e72668967..254b4dbb88 100644
 +
          this._userVerifier.destroy();
          this._userVerifier = null;
-     }
-@@ -282,6 +290,11 @@ export const AuthPrompt = GObject.registerClass({
+         this._entry = null;
+@@ -288,6 +296,11 @@ export const AuthPrompt = GObject.registerClass({
              this._userVerifier.answerQuery(this._queryingService, this._entry.text);
          } else {
              this._preemptiveAnswer = this._entry.text;
@@ -121,7 +121,7 @@ index 3e72668967..254b4dbb88 100644
          }
  
          this.emit('next');
-@@ -493,6 +506,11 @@ export const AuthPrompt = GObject.registerClass({
+@@ -510,6 +523,11 @@ export const AuthPrompt = GObject.registerClass({
      }
  
      setQuestion(question) {
@@ -133,7 +133,7 @@ index 3e72668967..254b4dbb88 100644
          this._entry.hint_text = question;
  
          this._authList.hide();
-@@ -614,6 +632,19 @@ export const AuthPrompt = GObject.registerClass({
+@@ -639,6 +657,19 @@ export const AuthPrompt = GObject.registerClass({
              this._updateEntry(false);
      }
  
@@ -153,18 +153,18 @@ index 3e72668967..254b4dbb88 100644
      reset() {
          let oldStatus = this.verificationStatus;
          this.verificationStatus = AuthPromptStatus.NOT_VERIFYING;
-@@ -621,6 +652,11 @@ export const AuthPrompt = GObject.registerClass({
+@@ -646,6 +677,11 @@ export const AuthPrompt = GObject.registerClass({
          this.cancelButton.can_focus = this._hasCancelButton;
          this._preemptiveAnswer = null;
  
 +        if (this._preemptiveAnswerWatchId)
 +            this._idleMonitor.remove_watch(this._preemptiveAnswerWatchId);
-+        this._preemptiveAnswerWatchId = this._idleMonitor.add_idle_watch(500,
++        this._preemptiveAnswerWatchId = this._idleMonitor.add_idle_watch(3000,
 +            this._onUserStoppedTypePreemptiveAnswer.bind(this));
 +
          if (this._userVerifier)
              this._userVerifier.cancel();
  
 -- 
-2.45.2
+2.51.1
 

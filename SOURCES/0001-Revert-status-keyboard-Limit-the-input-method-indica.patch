@@ -1,6 +1,6 @@
-From 8db86cefa58d5538aec7c4b24cd19e8f9f47d8d3 Mon Sep 17 00:00:00 2001
+From df7e3d8e4e4f5d6d875d1c1a48d23475dc98dc80 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
-Date: Wed, 13 Aug 2025 13:44:30 +0200
+Date: Fri, 7 Nov 2025 19:57:25 +0100
 Subject: [PATCH] Revert "status/keyboard: Limit the input method indicator to
  < 3 grapheme clusters"
 
@@ -8,16 +8,16 @@ The change requires support for Intl.Segmenter that was introduced
 in mozjs-125. RHEL still includes an older gjs release based on
 mozjs-115, so revert the change.
 
-This reverts commit a06400649de640e633247ebbfff56ebbfbda9933.
+This reverts commit f2246442a0ade263a1f9e775f02818bbd2862ae8.
 ---
  js/ui/status/keyboard.js | 9 +--------
  1 file changed, 1 insertion(+), 8 deletions(-)
 
 diff --git a/js/ui/status/keyboard.js b/js/ui/status/keyboard.js
-index df6c51c5d0..68a8044d0d 100644
+index 62f1e731db..7f00e289e3 100644
 --- a/js/ui/status/keyboard.js
 +++ b/js/ui/status/keyboard.js
-@@ -996,12 +996,6 @@ class InputSourceIndicator extends PanelMenu.Button {
+@@ -1005,12 +1005,6 @@ class InputSourceIndicator extends PanelMenu.Button {
          }
      }
  
@@ -30,7 +30,7 @@ index df6c51c5d0..68a8044d0d 100644
      _buildPropSubMenu(menu, props) {
          if (!props)
              return;
-@@ -1025,8 +1019,7 @@ class InputSourceIndicator extends PanelMenu.Button {
+@@ -1034,8 +1028,7 @@ class InputSourceIndicator extends PanelMenu.Button {
                  let currentSource = this._inputSourceManager.currentSource;
                  if (currentSource) {
                      let indicatorLabel = this._indicatorLabels[currentSource.index];
@@ -41,5 +41,5 @@ index df6c51c5d0..68a8044d0d 100644
                  }
              }
 -- 
-2.50.1
+2.51.1
 

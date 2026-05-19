@@ -1,8 +1,8 @@
 ## START: Set by rpmautospec
-## (rpmautospec version 0.6.5)
+## (rpmautospec version 0.8.3)
 ## RPMAUTOSPEC: autorelease, autochangelog
 %define autorelease(e:s:pb:n) %{?-p:0.}%{lua:
-    release_number = 6;
+    release_number = 3;
     base_release_number = tonumber(rpm.expand("%{?-b*}%{!?-b:1}"));
     print(release_number + base_release_number - 1);
 }%{?-e:.%{-e*}}%{?-s:.%{-s*}}%{!?-n:%{?dist}}
@@ -18,7 +18,7 @@
 %endif
 
 Name:           gnome-shell
-Version:        47.8
+Version:        49.4
 Release:        %autorelease
 Summary:        Window management and application launching for GNOME
 
@@ -28,21 +28,32 @@ Source0:        https://download.gnome.org/sources/gnome-shell/%{major_version}/
 
 # Replace Epiphany with Firefox in the default favourite apps list, etc
 # and enable background extension by default
-Patch: tweak-app-defaults.patch
 Patch: gnome-shell-favourite-apps-firefox.patch
 Patch: gnome-shell-favourite-apps-terminal.patch
 Patch: gnome-shell-enabled-extensions-background-logos.patch
 
-# Some users might have a broken PAM config, so we really need this
-# downstream patch to stop trying on configuration errors.
-Patch: 0001-gdm-Work-around-failing-fingerprint-auth.patch
+# girpository-2.0 port would require updates to both gjs and glib2,
+# so revert it
+Patch: revert-gir-2.0-port.patch
+
+# Required schemas have been backported
+Patch: 0001-build-Lower-gsettings-desktop-schemas-requirement.patch
+
+# Revert gnome-session related changes
+Patch: 0001-Revert-data-Drop-org.gnome.Shell.desktop.patch
+Patch: 0002-Reapply-main-Notify-gnome-session-when-we-re-ready.patch
 
 # GDM/Lock stuff
 Patch: 0001-screenShield-unblank-when-inserting-smartcard.patch
 Patch: enforce-smartcard-at-unlock.patch
 Patch: disable-unlock-entry-until-question.patch
-Patch: gdm-support-banner-message-file.patch
-Patch: 0001-systemActions-Optionally-allow-restart-shutdown-on-l.patch
+Patch: 0001-main-Register-session-with-GDM-on-startup.patch
+# Passwordless work
+# https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3212
+Patch: 0001-Support-for-web-login-and-unified-auth-mechanism.patch
+# Some users might have a broken PAM config, so we really need this
+# downstream patch to stop trying on configuration errors.
+Patch: 0001-gdm-Work-around-failing-fingerprint-auth.patch
 
 # Extensions
 Patch: 0001-extensionDownloader-Refuse-to-override-system-extens.patch
@@ -58,6 +69,7 @@ Patch: 0001-data-Update-generated-stylesheets.patch
 Patch: 0001-theme-Welcome-Illustration.patch
 Patch: screenshot-tool.patch
 Patch: 0001-Revert-status-keyboard-Limit-the-input-method-indica.patch
+Patch: 0001-Revert-Require-gjs-1.81.2-for-build-because-Intl.Seg.patch
 
 %define eds_version 3.45.1
 %define gnome_desktop_version 44.0-7
@@ -66,16 +78,16 @@ Patch: 0001-Revert-status-keyboard-Limit-the-input-method-indica.patch
 %define gjs_version 1.73.1
 %define gtk4_version 4.0.0
 %define adwaita_version 1.5.0
-%define mutter_version 47.0
+%define mutter_version 49.0
 %define polkit_version 0.100
 %define gsettings_desktop_schemas_version 47~alpha
 %define ibus_version 1.5.2
 %define gnome_bluetooth_version 1:42.3
 %define gstreamer_version 1.4.5
-%define pipewire_version 0.3.0
+%define pipewire_version 0.3.49
 %define gnome_settings_daemon_version 3.37.1
 
-BuildRequires:  bash-completion
+BuildRequires:  pkgconfig(bash-completion)
 BuildRequires:  gcc
 BuildRequires:  meson
 BuildRequires:  git
@@ -113,11 +125,9 @@ BuildRequires:  pkgconfig(libpulse)
 BuildRequires:  gnome-bluetooth-libs-devel >= %{gnome_bluetooth_version}
 %endif
 # Bootstrap requirements
-BuildRequires: gtk-doc
 %ifnarch s390 s390x
 Recommends:     gnome-bluetooth%{?_isa} >= %{gnome_bluetooth_version}
 %endif
-Requires:       gnome-desktop3%{?_isa} >= %{gnome_desktop_version}
 %if 0%{?rhel} != 7
 # Disabled on RHEL 7 to allow logging into KDE session by default
 Recommends:     gnome-session-xsession
@@ -145,7 +155,9 @@ Requires:       xdg-user-dirs-gtk
 # needed for schemas
 Requires:       at-spi2-atk%{?_isa}
 # needed for on-screen keyboard
-Requires:       ibus%{?_isa} >= %{ibus_version}
+Recommends:       ibus%{?_isa} >= %{ibus_version}
+# needed for gobject-introspection typelib
+Requires:       ibus-libs%{?_isa} >= %{ibus_version}
 # needed for "show keyboard layout"
 Requires:       tecla
 # needed for the user menu
@@ -182,6 +194,7 @@ Requires:     webkitgtk6.0%{?_isa}
 ExcludeArch:    %{ix86}
 %endif
 
+Provides:       gnome-shell(api) = %{major_version}
 Provides:       desktop-notification-daemon = %{version}-%{release}
 Provides:       PolicyKit-authentication-agent = %{version}-%{release}
 Provides:       bundled(gvc)
@@ -264,13 +277,17 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.gnome.Shell.Porta
 %{_datadir}/dbus-1/services/org.gnome.Shell.HotplugSniffer.service
 %{_datadir}/dbus-1/services/org.gnome.Shell.Notifications.service
 %{_datadir}/dbus-1/services/org.gnome.Shell.Screencast.service
+%{_datadir}/dbus-1/interfaces/org.gnome.Shell.Brightness.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Extensions.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Introspect.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.PadOsd.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Screencast.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.Shell.Screenshot.xml
+%{_datadir}/dbus-1/interfaces/org.gnome.Shell.ScreenTime.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.ShellSearchProvider.xml
 %{_datadir}/dbus-1/interfaces/org.gnome.ShellSearchProvider2.xml
+%{_datadir}/desktop-directories/X-GNOME-Shell-System.directory
+%{_datadir}/desktop-directories/X-GNOME-Shell-Utilities.directory
 %{_datadir}/icons/hicolor/scalable/apps/org.gnome.Shell.Extensions.svg
 %{_datadir}/icons/hicolor/symbolic/apps/org.gnome.Shell.Extensions-symbolic.svg
 %{_userunitdir}/org.gnome.Shell-disable-extensions.service
@@ -295,6 +312,52 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.gnome.Shell.Porta
 
 %changelog
 ## START: Generated by rpmautospec
+* Tue Apr 21 2026 Joan Torres Lopez <joantolo@redhat.com> - 49.4-3
+- Ensure gdm hint text is cleraed
+
+* Tue Feb 17 2026 Joan Torres Lopez <joantolo@redhat.com> - 49.4-2
+- Update passwordless GDM implementation to match upstream
+
+* Wed Feb 11 2026 Florian Müllner <fmuellner@redhat.com> - 49.4-1
+- Update to 49.4
+
+* Thu Jan 29 2026 Joan Torres Lopez <joantolo@redhat.com> - 49.1-9
+- Extend display time of messages interval
+
+* Wed Jan 21 2026 Joan Torres Lopez <joantolo@redhat.com> - 49.1-8
+- Allow preemptive answer for 3 secs before locking text entry
+
+* Wed Jan 21 2026 Joan Torres Lopez <joantolo@redhat.com> - 49.1-7
+- Update passwordless GDM patch series
+
+* Thu Jan 15 2026 Joan Torres Lopez <joantolo@redhat.com> - 49.1-6
+- Update styles for passwordless GDM
+
+* Thu Jan 15 2026 Joan Torres Lopez <joantolo@redhat.com> - 49.1-5
+- Add passwordless gdm patch series
+
+* Fri Nov 14 2025 Joan Torres Lopez <joantolo@redhat.com> - 49.1-4
+- Register session with GDM on startup
+
+* Thu Nov 13 2025 Florian Müllner <fmuellner@redhat.com> - 49.1-3
+- Provide gnome-shell(api) that extension packages can use to check
+  compatibility
+
+* Thu Nov 13 2025 Florian Müllner <fmuellner@redhat.com> - 49.1-2
+- Revert gnome-session related changes
+
+* Tue Nov 11 2025 Florian Müllner <fmuellner@redhat.com> - 49.1-1
+- Update to 49.1
+
+* Wed Oct 15 2025 Florian Müllner <fmuellner@redhat.com> - 47.10-1
+- Update to 47.10
+
+* Wed Oct 15 2025 Florian Müllner <fmuellner@redhat.com> - 47.9-2
+- Remove unused gnome-desktop-3 require
+
+* Wed Aug 27 2025 Florian Müllner <fmuellner@redhat.com> - 47.9-1
+- Update to 47.9
+
 * Wed Aug 13 2025 Florian Müllner <fmuellner@redhat.com> - 47.8-6
 - Add missing require
 

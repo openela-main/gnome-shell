@@ -1,4 +1,4 @@
-From 0bd4ecbbcc47a8574edae46b56695572a846a1e2 Mon Sep 17 00:00:00 2001
+From b434e61f95b1bb63b8f5e027a718091482be232a Mon Sep 17 00:00:00 2001
 From: Ray Strode <rstrode@redhat.com>
 Date: Tue, 15 Jan 2019 12:54:32 -0500
 Subject: [PATCH] st-texture-cache: purge on resume
@@ -12,10 +12,10 @@ so the texture cache needs to evict all textures in that situation.
  3 files changed, 16 insertions(+), 1 deletion(-)
 
 diff --git a/js/ui/main.js b/js/ui/main.js
-index 73980edb88..5c17258177 100644
+index 40898e15c2..bb6d8f6723 100644
 --- a/js/ui/main.js
 +++ b/js/ui/main.js
-@@ -263,7 +263,11 @@ async function _initializeUI() {
+@@ -298,7 +298,11 @@ async function _initializeUI() {
          return true;
      });
  
@@ -29,7 +29,7 @@ index 73980edb88..5c17258177 100644
      global.context.connect('notify::unsafe-mode', () => {
          if (!global.context.unsafe_mode)
 diff --git a/src/st/st-texture-cache.c b/src/st/st-texture-cache.c
-index e03ec44619..ac19e98cf5 100644
+index 2c7601da1a..0df930ad43 100644
 --- a/src/st/st-texture-cache.c
 +++ b/src/st/st-texture-cache.c
 @@ -131,6 +131,16 @@ st_texture_cache_class_init (StTextureCacheClass *klass)
@@ -50,17 +50,17 @@ index e03ec44619..ac19e98cf5 100644
  static void
  st_texture_cache_evict_icons (StTextureCache *cache)
 diff --git a/src/st/st-texture-cache.h b/src/st/st-texture-cache.h
-index 7ca08ab34a..f600938047 100644
+index 4158298042..5a77165813 100644
 --- a/src/st/st-texture-cache.h
 +++ b/src/st/st-texture-cache.h
-@@ -42,6 +42,7 @@ typedef enum {
+@@ -43,6 +43,7 @@ typedef enum {
  } StTextureCachePolicy;
  
  StTextureCache* st_texture_cache_get_default (void);
 +void st_texture_cache_clear (StTextureCache *cache);
  
- ClutterActor *
- st_texture_cache_load_sliced_image (StTextureCache *cache,
+ ClutterActor *st_texture_cache_load_gicon (StTextureCache *cache,
+                                            StThemeNode    *theme_node,
 -- 
-2.47.1
+2.51.1
 
