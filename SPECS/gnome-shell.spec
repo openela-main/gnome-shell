@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        31%{?dist}
+Release:        33%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -37,6 +37,7 @@ Patch18: 0001-authPrompt-Disregard-smartcard-status-changes-events.patch
 Patch19: 0001-loginDialog-Show-session-menu-button-when-in-IN_PROG.patch
 Patch20: 0001-systemActions-Optionally-allow-restart-shutdown-on-l.patch
 Patch21: 0001-authPrompt-Connect-disable-show-password-key-with-pa.patch
+Patch22: 0001-main-Register-session-with-GDM-on-startup.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -76,6 +77,7 @@ Patch63: 0001-shell-window-tracker-Help-mutter-finding-app-info-s-.patch
 Patch64: 0001-dnd-Don-t-leak-a-signal-connection.patch
 Patch65: 0001-st-theme-Reuse-stylesheets-if-possible.patch
 Patch66: 0001-Support-conflicting-session-dialog.patch
+Patch67: 0001-shell-window-tracker-Track-windows-when-finding-app-.patch
 
 %define eds_version 3.33.1
 %define gnome_desktop_version 3.35.91
@@ -305,6 +307,14 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Tue Nov 18 2025 Joan Torres Lopez <joantolo@redhat.com> - 40.10-33
+- Register session with GDM on startup
+  Resolves: RHEL-129287
+
+* Thu Nov 27 2025 Jonas Ådahl <jadahl@redhat.com> - 40.10-32
+- Avoid broken app instances with remote clients
+  Resolves: RHEL-68825
+
 * Wed Oct 22 2025 Joan Torres <joantolo@redhat.com> - 40.10-31
 - Don't fail if disable-show-password doesn't exist
   Related: RHEL-109190

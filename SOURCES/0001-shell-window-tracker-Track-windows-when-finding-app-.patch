@@ -1,0 +1,85 @@
+From 8f6fe1b2290c112e2b4b75812e67ea82bdf7660d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Thu, 27 Nov 2025 14:28:16 +0100
+Subject: [PATCH] shell/window-tracker: Track windows when finding app info
+ already
+
+We'd get the Shell.App from the window, in order to get the app info for
+find-app-info signal, but that had the side effect of creating and
+starting the Shell.App instance, without tracking the window.
+
+Fix this by simply fully tracking the window already at this stage.
+---
+ src/shell-window-tracker.c | 20 ++++++++++++++------
+ 1 file changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/src/shell-window-tracker.c b/src/shell-window-tracker.c
+index 2f2bd10eed..3d7c6bb2de 100644
+--- a/src/shell-window-tracker.c
++++ b/src/shell-window-tracker.c
+@@ -65,7 +65,7 @@ static void set_focus_app (ShellWindowTracker  *tracker,
+                            ShellApp            *new_focus_app);
+ static void on_focus_window_changed (MetaDisplay *display, GParamSpec *spec, ShellWindowTracker *tracker);
+ 
+-static void track_window (ShellWindowTracker *tracker, MetaWindow *window);
++static ShellApp * track_window (ShellWindowTracker *tracker, MetaWindow *window);
+ static void disassociate_window (ShellWindowTracker *tracker, MetaWindow *window);
+ 
+ static ShellApp * shell_startup_sequence_get_app (MetaStartupSequence *sequence);
+@@ -543,7 +543,7 @@ on_window_unmanaged (MetaWindow *window,
+   disassociate_window (SHELL_WINDOW_TRACKER (user_data), window);
+ }
+ 
+-static void
++static ShellApp *
+ track_window (ShellWindowTracker *self,
+               MetaWindow      *window)
+ {
+@@ -551,7 +551,7 @@ track_window (ShellWindowTracker *self,
+ 
+   app = get_app_for_window (self, window);
+   if (!app)
+-    return;
++    return NULL;
+ 
+   /* At this point we've stored the association from window -> application */
+   g_hash_table_insert (self->window_to_app, window, app);
+@@ -564,6 +564,8 @@ track_window (ShellWindowTracker *self,
+   _shell_app_add_window (app, window);
+ 
+   g_signal_emit (self, signals[TRACKED_WINDOWS_CHANGED], 0);
++
++  return app;
+ }
+ 
+ static void
+@@ -582,7 +584,10 @@ shell_window_tracker_on_window_added (MetaWorkspace   *workspace,
+                                       MetaWindow      *window,
+                                       gpointer         user_data)
+ {
+-  track_window (SHELL_WINDOW_TRACKER (user_data), window);
++  ShellWindowTracker *self = user_data;
++
++  if (!g_hash_table_contains (self->window_to_app, window))
++    track_window (self, window);
+ }
+ 
+ static void
+@@ -656,9 +661,12 @@ on_find_app_info (MetaDisplay        *display,
+                   MetaWindow         *window,
+                   ShellWindowTracker *tracker)
+ {
+-  g_autoptr (ShellApp) app = NULL;
++  ShellApp *app;
++
++  app = g_hash_table_lookup (tracker->window_to_app, window);
++  if (!app)
++    app = track_window (tracker, window);
+ 
+-  app = get_app_for_window (tracker, window);
+   if (!app)
+     return NULL;
+ 
+-- 
+2.47.3
+
