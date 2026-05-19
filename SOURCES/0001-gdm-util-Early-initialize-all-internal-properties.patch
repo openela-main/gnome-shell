@@ -1,0 +1,1008 @@
+From f1c0f65075b839b59e082d1cc060f9bc80ac8574 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 21 Oct 2022 19:09:09 +0200
+Subject: [PATCH 01/13] gdm/util: Early initialize all internal properties
+
+These may be used later by methods called by constructors, so ensure
+that they're all defined early.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 21 ++++++++++++---------
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 3f32740..ecc05fa 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -142,10 +142,22 @@ var ShellUserVerifier = class {
+         this._reauthOnly = params.reauthenticationOnly;
+ 
+         this._client = client;
++        this._cancellable = null;
+ 
+         this._defaultService = null;
+         this._preemptingService = null;
+ 
++        this._messageQueue = [];
++        this._messageQueueTimeoutId = 0;
++
++        this._failCounter = 0;
++        this._unavailableServices = new Set();
++
++        this._credentialManagers = {};
++
++        this.reauthenticating = false;
++        this.smartcardDetected = false;
++
+         this._settings = new Gio.Settings({ schema_id: LOGIN_SCREEN_SCHEMA });
+         this._settings.connect('changed',
+                                this._updateDefaultService.bind(this));
+@@ -172,14 +184,6 @@ var ShellUserVerifier = class {
+         this._smartcardRemovedId = this._smartcardManager.connect('smartcard-removed',
+                                                                   this._checkForSmartcard.bind(this));
+ 
+-        this._messageQueue = [];
+-        this._messageQueueTimeoutId = 0;
+-        this.reauthenticating = false;
+-
+-        this._failCounter = 0;
+-        this._unavailableServices = new Set();
+-
+-        this._credentialManagers = {};
+         this._credentialManagers[OVirt.SERVICE_NAME] = OVirt.getOVirtCredentialsManager();
+         this._credentialManagers[Vmware.SERVICE_NAME] = Vmware.getVmwareCredentialsManager();
+ 
+--
+2.51.0
+
+
+From 9af029e968a6ad369ae8f73fb0e7d73f37ebe677 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 21 Oct 2022 17:47:15 +0200
+Subject: [PATCH 02/13] gdm/util: Keep track of started services that are
+ currently active
+
+If we have a late activation of a service backend we may need to check
+whether it has been already started, and in case it has not, we can try
+loading it.
+
+So rely on gdm to see what service has been started, instead of handling
+it manually on our side only.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index ecc05fa..7694b6f 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -151,6 +151,7 @@ var ShellUserVerifier = class {
+         this._messageQueueTimeoutId = 0;
+ 
+         this._failCounter = 0;
++        this._activeServices = new Set();
+         this._unavailableServices = new Set();
+ 
+         this._credentialManagers = {};
+@@ -257,6 +258,7 @@ var ShellUserVerifier = class {
+ 
+         this._clearUserVerifier();
+         this._clearMessageQueue();
++        this._activeServices.clear();
+     }
+ 
+     destroy() {
+@@ -513,6 +515,8 @@ var ShellUserVerifier = class {
+         this._signalIds.push(id);
+         id = this._userVerifier.connect('secret-info-query', this._onSecretInfoQuery.bind(this));
+         this._signalIds.push(id);
++        id = this._userVerifier.connect('conversation-started', this._onConversationStarted.bind(this));
++        this._signalIds.push(id);
+         id = this._userVerifier.connect('conversation-stopped', this._onConversationStopped.bind(this));
+         this._signalIds.push(id);
+         id = this._userVerifier.connect('service-unavailable', this._onServiceUnavailable.bind(this));
+@@ -573,6 +577,7 @@ var ShellUserVerifier = class {
+     async _startService(serviceName) {
+         this._hold.acquire();
+         try {
++            this._activeServices.add(serviceName);
+             if (this._userName) {
+                 await this._userVerifier.call_begin_verification_for_user(
+                     serviceName, this._userName, this._cancellable);
+@@ -581,6 +586,7 @@ var ShellUserVerifier = class {
+                     serviceName, this._cancellable);
+             }
+         } catch (e) {
++            this._activeServices.delete(serviceName);
+             if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                 return;
+             if (!this.serviceIsForeground(serviceName)) {
+@@ -696,6 +702,7 @@ var ShellUserVerifier = class {
+     _onReset() {
+         // Clear previous attempts to authenticate
+         this._failCounter = 0;
++        this._activeServices.clear();
+         this._unavailableServices.clear();
+         this._updateDefaultService();
+ 
+@@ -776,7 +783,13 @@ var ShellUserVerifier = class {
+             this._queueMessage(serviceName, errorMessage, MessageType.ERROR);
+     }
+ 
++    _onConversationStarted(client, serviceName) {
++        this._activeServices.add(serviceName);
++    }
++
+     _onConversationStopped(client, serviceName) {
++        this._activeServices.delete(serviceName);
++
+         // If the login failed with the preauthenticated oVirt credentials
+         // then discard the credentials and revert to default authentication
+         // mechanism.
+-- 
+2.51.0
+
+
+From dc4f0f9053b0db3d064be5e8e74699a3cd11209f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Fri, 21 Oct 2022 19:05:04 +0200
+Subject: [PATCH 03/13] gdm/util: Restart auth if default service changed
+
+If a default service changed while the previous one was active we need to
+reset the authentication so that we set back to the expected one.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index e3c6e1b..83c7d43 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -559,6 +559,8 @@ var ShellUserVerifier = class {
+     }
+ 
+     _updateDefaultService() {
++        const oldDefaultService = this._defaultService;
++
+         if (this._smartcardManager?.loggedInWithToken())
+             this._defaultService = SMARTCARD_SERVICE_NAME;
+         else if (this._settings.get_boolean(PASSWORD_AUTHENTICATION_KEY))
+@@ -572,6 +574,11 @@ var ShellUserVerifier = class {
+             log("no authentication service is enabled, using password authentication");
+             this._defaultService = PASSWORD_SERVICE_NAME;
+         }
++
++        if (oldDefaultService &&
++            oldDefaultService !== this._defaultService &&
++            this._activeServices.has(oldDefaultService))
++            this._cancelAndReset();
+     }
+ 
+     async _startService(serviceName) {
+-- 
+2.51.0
+
+
+From 9f3a9f8f2c619e9b9f49e818434dc6569eea66d9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 25 Oct 2022 03:51:30 +0200
+Subject: [PATCH 04/13] gdm/util: Do not use gjs GDBus proxy wrapper for fprint
+ manager
+
+It only adds more complexity, while we can handle it all manually quite
+easier now.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 7c5a084..7babc26 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -13,8 +13,8 @@ const { loadInterfaceXML } = imports.misc.fileUtils;
+ const Params = imports.misc.params;
+ const SmartcardManager = imports.misc.smartcardManager;
+ 
+-const FprintManagerIface = loadInterfaceXML('net.reactivated.Fprint.Manager');
+-const FprintManagerProxy = Gio.DBusProxy.makeProxyWrapper(FprintManagerIface);
++const FprintManagerInfo = Gio.DBusInterfaceInfo.new_for_xml(
++    loadInterfaceXML('net.reactivated.Fprint.Manager'));
+ const FprintDeviceIface = loadInterfaceXML('net.reactivated.Fprint.Device');
+ const FprintDeviceProxy = Gio.DBusProxy.makeProxyWrapper(FprintDeviceIface);
+ 
+@@ -163,12 +163,15 @@ var ShellUserVerifier = class {
+         this._settings.connect('changed',
+                                this._updateDefaultService.bind(this));
+ 
+-        this._fprintManager = new FprintManagerProxy(Gio.DBus.system,
+-            'net.reactivated.Fprint',
+-            '/net/reactivated/Fprint/Manager',
+-            null,
+-            null,
+-            Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES);
++        this._fprintManager = new Gio.DBusProxy({
++            g_connection: Gio.DBus.system,
++            g_name: 'net.reactivated.Fprint',
++            g_object_path: '/net/reactivated/Fprint/Manager',
++            g_interface_name: FprintManagerInfo.name,
++            g_interface_info: FprintManagerInfo,
++            g_flags: Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES,
++        });
++        this._fprintManager.init(null);
+         this._smartcardManager = SmartcardManager.getSmartcardManager();
+ 
+         // We check for smartcards right away, since an inserted smartcard
+-- 
+2.51.0
+
+
+From ea3731de3828827bb632ab7eba64cf4d0e85abc9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 1 Mar 2022 11:57:20 +0100
+Subject: [PATCH 05/13] gdm/util: Only initialize fingerprint and smart card
+ managers if needed
+
+There's no point to initialize the fprint proxy and the smartcard
+manager if they are disabled in authentication settings, so just avoid
+initializing them, but at the same time this implies tracking of user
+changes and so:
+ - If a new service has been enabled, we initialize it
+ - If a service has been disabled we destroy it and reset the
+   authentication if such service was currently active
+
+In both cases we do update the default service.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 100 +++++++++++++++++++++++++++++++++++--------------
+ 1 file changed, 72 insertions(+), 28 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 7babc26..f2041cb 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -160,34 +160,10 @@ var ShellUserVerifier = class {
+         this.smartcardDetected = false;
+ 
+         this._settings = new Gio.Settings({ schema_id: LOGIN_SCREEN_SCHEMA });
+-        this._settings.connect('changed',
+-                               this._updateDefaultService.bind(this));
+-
+-        this._fprintManager = new Gio.DBusProxy({
+-            g_connection: Gio.DBus.system,
+-            g_name: 'net.reactivated.Fprint',
+-            g_object_path: '/net/reactivated/Fprint/Manager',
+-            g_interface_name: FprintManagerInfo.name,
+-            g_interface_info: FprintManagerInfo,
+-            g_flags: Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES,
+-        });
+-        this._fprintManager.init(null);
+-        this._smartcardManager = SmartcardManager.getSmartcardManager();
+-
+-        // We check for smartcards right away, since an inserted smartcard
+-        // at startup should result in immediately initiating authentication.
+-        // This is different than fingerprint readers, where we only check them
+-        // after a user has been picked.
+-        this.smartcardDetected = false;
+-        this._checkForSmartcard();
+-
++        this._settings.connect('changed', () => this._onSettingsChanged());
++        this._updateEnabledServices();
+         this._updateDefaultService();
+ 
+-        this._smartcardInsertedId = this._smartcardManager.connect('smartcard-inserted',
+-                                                                   this._checkForSmartcard.bind(this));
+-        this._smartcardRemovedId = this._smartcardManager.connect('smartcard-removed',
+-                                                                  this._checkForSmartcard.bind(this));
+-
+         this._credentialManagers[OVirt.SERVICE_NAME] = OVirt.getOVirtCredentialsManager();
+         this._credentialManagers[Vmware.SERVICE_NAME] = Vmware.getVmwareCredentialsManager();
+ 
+@@ -270,10 +246,12 @@ var ShellUserVerifier = class {
+         this._settings.run_dispose();
+         this._settings = null;
+ 
+-        this._smartcardManager.disconnect(this._smartcardInsertedId);
+-        this._smartcardManager.disconnect(this._smartcardRemovedId);
++        this._smartcardManager?.disconnect(this._smartcardInsertedId);
++        this._smartcardManager?.disconnect(this._smartcardRemovedId);
+         this._smartcardManager = null;
+ 
++        this._fingerprintManager = null;
++
+         for (let service in this._credentialManagers) {
+             let credentialManager = this._credentialManagers[service];
+             credentialManager.disconnect(credentialManager._authenticatedSignalId);
+@@ -388,11 +366,25 @@ var ShellUserVerifier = class {
+         this.emit('show-message', null, null, MessageType.NONE);
+     }
+ 
++    _initFingerprintManager() {
++        if (this._fprintManager)
++            return;
++
++        this._fprintManager = new Gio.DBusProxy({
++            g_connection: Gio.DBus.system,
++            g_name: 'net.reactivated.Fprint',
++            g_object_path: '/net/reactivated/Fprint/Manager',
++            g_interface_name: FprintManagerInfo.name,
++            g_interface_info: FprintManagerInfo,
++            g_flags: Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES,
++        });
++        this._fprintManager.init(null);
++    }
++
+     _checkForFingerprintReader() {
+         this._fingerprintReaderType = FingerprintReaderType.NONE;
+ 
+-        if (!this._settings.get_boolean(FINGERPRINT_AUTHENTICATION_KEY) ||
+-            this._fprintManager == null) {
++        if (!this._fprintManager) {
+             this._updateDefaultService();
+             return;
+         }
+@@ -419,6 +411,25 @@ var ShellUserVerifier = class {
+         this.emit('credential-manager-authenticated');
+     }
+ 
++    _initSmartcardManager() {
++        if (this._smartcardManager)
++            return;
++
++        this._smartcardManager = SmartcardManager.getSmartcardManager();
++
++        // We check for smartcards right away, since an inserted smartcard
++        // at startup should result in immediately initiating authentication.
++        // This is different than fingerprint readers, where we only check them
++        // after a user has been picked.
++        this.smartcardDetected = false;
++        this._checkForSmartcard();
++
++        this._smartcardInsertedId = this._smartcardManager.connect('smartcard-inserted',
++                                                                   this._checkForSmartcard.bind(this));
++        this._smartcardRemovedId = this._smartcardManager.connect('smartcard-removed',
++                                                                  this._checkForSmartcard.bind(this));
++    }
++
+     _checkForSmartcard() {
+         let smartcardDetected;
+ 
+@@ -561,6 +572,39 @@ var ShellUserVerifier = class {
+             serviceName === FINGERPRINT_SERVICE_NAME;
+     }
+ 
++    _onSettingsChanged() {
++        this._updateEnabledServices();
++        this._updateDefaultService();
++    }
++
++    _updateEnabledServices() {
++        let needsReset = false;
++
++        if (this._settings.get_boolean(FINGERPRINT_AUTHENTICATION_KEY)) {
++            this._initFingerprintManager();
++        } else if (this._fingerprintManager) {
++            this._fingerprintManager = null;
++            this._fingerprintReaderType = FingerprintReaderType.NONE;
++
++            if (this._activeServices.has(FINGERPRINT_SERVICE_NAME))
++                needsReset = true;
++        }
++
++        if (this._settings.get_boolean(SMARTCARD_AUTHENTICATION_KEY)) {
++            this._initSmartcardManager();
++        } else if (this._smartcardManager) {
++            this._smartcardManager.disconnect(this._smartcardInsertedId);
++            this._smartcardManager.disconnect(this._smartcardRemovedId);
++            this._smartcardManager = null;
++
++            if (this._activeServices.has(SMARTCARD_SERVICE_NAME))
++                needsReset = true;
++        }
++
++        if (needsReset)
++            this._cancelAndReset();
++    }
++
+     _updateDefaultService() {
+         const oldDefaultService = this._defaultService;
+ 
+@@ -568,7 +612,7 @@ var ShellUserVerifier = class {
+             this._defaultService = SMARTCARD_SERVICE_NAME;
+         else if (this._settings.get_boolean(PASSWORD_AUTHENTICATION_KEY))
+             this._defaultService = PASSWORD_SERVICE_NAME;
+-        else if (this._settings.get_boolean(SMARTCARD_AUTHENTICATION_KEY))
++        else if (this._smartcardManager)
+             this._defaultService = SMARTCARD_SERVICE_NAME;
+         else if (this._fingerprintReaderType !== FingerprintReaderType.NONE)
+             this._defaultService = FINGERPRINT_SERVICE_NAME;
+-- 
+2.51.0
+
+
+From 0d24563296a5a53712fe72c8995a1322fd5b4121 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 25 Oct 2022 04:47:08 +0200
+Subject: [PATCH 06/13] gdm/util: Do not handle fingerprint async errors in
+ call
+
+It's better to do this at caller level so that we have more control of
+what to do on errors.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 26 ++++++++++++--------------
+ 1 file changed, 12 insertions(+), 14 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index f2041cb..569f3fd 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -197,7 +197,7 @@ var ShellUserVerifier = class {
+         this._userName = userName;
+         this.reauthenticating = false;
+ 
+-        this._checkForFingerprintReader();
++        this._checkForFingerprintReader().catch(logError);
+ 
+         // If possible, reauthenticate an already running session,
+         // so any session specific credentials get updated appropriately
+@@ -381,7 +381,7 @@ var ShellUserVerifier = class {
+         this._fprintManager.init(null);
+     }
+ 
+-    _checkForFingerprintReader() {
++    async _checkForFingerprintReader() {
+         this._fingerprintReaderType = FingerprintReaderType.NONE;
+ 
+         if (!this._fprintManager) {
+@@ -389,21 +389,17 @@ var ShellUserVerifier = class {
+             return;
+         }
+ 
+-        this._fprintManager.GetDefaultDeviceRemote(Gio.DBusCallFlags.NONE, this._cancellable,
+-            (params, error) => {
+-                if (!error && params) {
+-                    const [device] = params;
+-                    const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
+-                        'net.reactivated.Fprint',
+-                        device);
+-                    const fprintDeviceType = fprintDeviceProxy['scan-type'];
+-
+-                    this._fingerprintReaderType = fprintDeviceType === 'swipe'
+-                        ? FingerprintReaderType.SWIPE
+-                        : FingerprintReaderType.PRESS;
+-                    this._updateDefaultService();
+-                }
+-            });
++        const [device] = await this._fprintManager.GetDefaultDeviceAsync(
++            Gio.DBusCallFlags.NONE, this._cancellable);
++        const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
++            'net.reactivated.Fprint',
++            device);
++        const fprintDeviceType = fprintDeviceProxy['scan-type'];
++
++        this._fingerprintReaderType = fprintDeviceType === 'swipe'
++            ? FingerprintReaderType.SWIPE
++            : FingerprintReaderType.PRESS;
++        this._updateDefaultService();
+     }
+ 
+     _onCredentialManagerAuthenticated(credentialManager, _token) {
+-- 
+2.51.0
+
+
+From d5ca108a65488c369929cfc360b1532e953c7286 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 12 Apr 2022 16:38:40 +0200
+Subject: [PATCH 07/13] gdm/util: Start fingerprint verification once it's
+ available
+
+If fingerprint service is not replying fast enough to our async request,
+authentication is started but the fingerprint service is never started.
+
+So, in case the fingerprint type information is received after that the
+authentication has been started, let's start the service.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 6731200f66..24593f6b5c 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -366,6 +366,13 @@ export class ShellUserVerifier extends Signals.EventEmitter {
+             ? FingerprintReaderType.SWIPE
+             : FingerprintReaderType.PRESS;
+         this._updateDefaultService();
++
++        if (this._userVerifier &&
++            !this._activeServices.has(FINGERPRINT_SERVICE_NAME)) {
++            if (!this._hold?.isAcquired())
++                this._hold = new Batch.Hold();
++            await this._maybeStartFingerprintVerification();
++        }
+     }
+ 
+     _onCredentialManagerAuthenticated(credentialManager, _token) {
+@@ -617,11 +624,14 @@ export class ShellUserVerifier extends Signals.EventEmitter {
+ 
+     _beginVerification() {
+         this._startService(this._getForegroundService());
++        this._maybeStartFingerprintVerification().catch(logError);
++    }
+ 
++    async _maybeStartFingerprintVerification() {
+         if (this._userName &&
+             this._fingerprintReaderType !== FingerprintReaderType.NONE &&
+             !this.serviceIsForeground(FINGERPRINT_SERVICE_NAME))
+-            this._startService(FINGERPRINT_SERVICE_NAME);
++            await this._startService(FINGERPRINT_SERVICE_NAME);
+     }
+ 
+     _onChoiceListQuery(client, serviceName, promptMessage, list) {
+-- 
+2.51.0
+
+
+From efb52899f505f1c54120298ac1cc7d3e476a4ff6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Wed, 28 Feb 2024 21:52:55 +0100
+Subject: [PATCH 08/13] js/gdm/util: Rename fingerprint device into devicePath
+
+It's just the dbus object path, so let's not be confused by that.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 24593f6b5c..2db9188070 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -355,11 +355,11 @@ export class ShellUserVerifier extends Signals.EventEmitter {
+             return;
+         }
+ 
+-        const [device] = await this._fprintManager.GetDefaultDeviceAsync(
++        const [devicePath] = await this._fprintManager.GetDefaultDeviceAsync(
+             Gio.DBusCallFlags.NONE, this._cancellable);
+         const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
+             'net.reactivated.Fprint',
+-            device);
++            devicePath);
+         const fprintDeviceType = fprintDeviceProxy['scan-type'];
+ 
+         this._fingerprintReaderType = fprintDeviceType === 'swipe'
+-- 
+2.51.0
+
+
+From 885f1391ab85644377e6080be5ada5960ad209a5 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 12 Apr 2022 16:51:21 +0200
+Subject: [PATCH 09/13] gdm/util: Only start fingerprint service synchronously
+ when it's default
+
+On ShellUserVerifier construction we used to start fprintd in a sync
+fashion all the times, however in case the daemon had startup failures
+or was hanging for whatever reason (like due to devices probing, given
+that fprintd synchronously wait for them all to be initialized) we used
+to just fail, leaving gdm or the lockscreen in a not usable state.
+
+While this could be prevented with a try/catch statement, there's no
+much point to wait for fprintd if that's not the default authentication
+service, and so:
+ - If we use gdm-fingerprint as default auth method, use a sync call to
+   initialize it and in case of failures, just continue with fallback
+   authentication mechanism (password)
+
+ - Otherwise, asynchronously initialize fprintd and continue with the
+   ShellUserVerifier without fingerprint support until we got a reply.
+   In case the service fails to deliver us a result, we don't give up
+   but we will try doing that at each authentication via
+   _checkForFingerprintReader().
+   In case all works properly, as per the previous commit, once the
+   initialization is done, we'll start the fingerprint PAM gdm service.
+
+Fixes #5168
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 100 +++++++++++++++++++++++++++++++++++++++----------
+ 1 file changed, 80 insertions(+), 20 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 79afbec..2a7644f 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -146,6 +146,7 @@ var ShellUserVerifier = class {
+ 
+         this._defaultService = null;
+         this._preemptingService = null;
++        this._fingerprintReaderType = FingerprintReaderType.NONE;
+ 
+         this._messageQueue = [];
+         this._messageQueueTimeoutId = 0;
+@@ -197,7 +198,8 @@ var ShellUserVerifier = class {
+         this._userName = userName;
+         this.reauthenticating = false;
+ 
+-        this._checkForFingerprintReader().catch(logError);
++        this._checkForFingerprintReader().catch(e =>
++            this._handleFingerprintError(e));
+ 
+         // If possible, reauthenticate an already running session,
+         // so any session specific credentials get updated appropriately
+@@ -366,39 +368,85 @@ var ShellUserVerifier = class {
+         this.emit('show-message', null, null, MessageType.NONE);
+     }
+ 
+-    _initFingerprintManager() {
++    async _initFingerprintManager() {
+         if (this._fprintManager)
+             return;
+ 
+-        this._fprintManager = new Gio.DBusProxy({
++        const fprintManager = new Gio.DBusProxy({
+             g_connection: Gio.DBus.system,
+             g_name: 'net.reactivated.Fprint',
+             g_object_path: '/net/reactivated/Fprint/Manager',
+             g_interface_name: FprintManagerInfo.name,
+             g_interface_info: FprintManagerInfo,
+-            g_flags: Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES,
++            g_flags: Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES |
++                Gio.DBusProxyFlags.DO_NOT_AUTO_START_AT_CONSTRUCTION |
++                Gio.DBusProxyFlags.DO_NOT_CONNECT_SIGNALS,
+         });
+-        this._fprintManager.init(null);
++
++        try {
++            if (!this._getDetectedDefaultService()) {
++                // Other authentication methods would have already been detected by
++                // now as possibilities if they were available.
++                // If we're here it means that FINGERPRINT_AUTHENTICATION_KEY is
++                // true and so fingerprint authentication is our last potential
++                // option, so go ahead a synchronously look for a fingerprint device
++                // during startup or default service update.
++                fprintManager.init(null);
++                const [devicePath] = fprintManager.GetDefaultDeviceSync();
++                this._fprintManager = fprintManager;
++
++                const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
++                    'net.reactivated.Fprint', devicePath, null, null,
++                    Gio.DBusProxyFlags.NOT_CONNECT_SIGNALS);
++                this._setFingerprintReaderType(fprintDeviceProxy['scan-type']);
++            } else {
++                // Ensure fingerprint service starts, but do not wait for it
++                const cancellable = this._cancellable;
++                await fprintManager.init_async(GLib.PRIORITY_DEFAULT, cancellable);
++                await this._updateFingerprintReaderType(fprintManager, cancellable);
++                this._fprintManager = fprintManager;
++            }
++        } catch (e) {
++            this._handleFingerprintError(e);
++        }
+     }
+ 
+-    async _checkForFingerprintReader() {
++    _handleFingerprintError(e) {
+         this._fingerprintReaderType = FingerprintReaderType.NONE;
+ 
++        if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
++            return;
++        if (e.matches(Gio.DBusError, Gio.DBusError.SERVICE_UNKNOWN))
++            return;
++
++        if (Gio.DBusError.is_remote_error(e) &&
++            Gio.DBusError.get_remote_error(e) ===
++                'net.reactivated.Fprint.Error.NoSuchDevice')
++            return;
++
++        logError(e, 'Failed to interact with fprintd service');
++    }
++
++    async _checkForFingerprintReader() {
+         if (!this._fprintManager) {
+             this._updateDefaultService();
+             return;
+         }
+ 
+-        const [devicePath] = await this._fprintManager.GetDefaultDeviceAsync(
+-            Gio.DBusCallFlags.NONE, this._cancellable);
++        if (this._fingerprintReaderType !== FingerprintReaderType.NONE)
++            return;
++
++        await this._updateFingerprintReaderType(this._fprintManager, this._cancellable);
++    }
++
++    async _updateFingerprintReaderType(fprintManager, cancellable) {
++        // Wrappers don't support null cancellable, so let's ignore it in case
++        const args = cancellable ? [cancellable] : [];
++        const [devicePath] = await fprintManager.GetDefaultDeviceAsync(...args);
+         const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
+             'net.reactivated.Fprint',
+             devicePath);
+-        const fprintDeviceType = fprintDeviceProxy['scan-type'];
+-
+-        this._fingerprintReaderType = fprintDeviceType === 'swipe'
+-            ? FingerprintReaderType.SWIPE
+-            : FingerprintReaderType.PRESS;
++        this._setFingerprintReaderType(fprintDeviceProxy['scan-type']);
+         this._updateDefaultService();
+ 
+         if (this._userVerifier &&
+@@ -409,6 +457,14 @@ var ShellUserVerifier = class {
+         }
+     }
+ 
++    _setFingerprintReaderType(fprintDeviceType) {
++        this._fingerprintReaderType =
++            FingerprintReaderType[fprintDeviceType.toUpperCase()];
++
++        if (this._fingerprintReaderType === undefined)
++            throw new Error(`Unexpected fingerprint device type '${fprintDeviceType}'`);
++    }
++
+     _onCredentialManagerAuthenticated(credentialManager, _token) {
+         this._preemptingService = credentialManager.service;
+         this.emit('credential-manager-authenticated');
+@@ -584,7 +640,7 @@ var ShellUserVerifier = class {
+         let needsReset = false;
+ 
+         if (this._settings.get_boolean(FINGERPRINT_AUTHENTICATION_KEY)) {
+-            this._initFingerprintManager();
++            this._initFingerprintManager().catch(logError);
+         } else if (this._fingerprintManager) {
+             this._fingerprintManager = null;
+             this._fingerprintReaderType = FingerprintReaderType.NONE;
+@@ -608,17 +664,21 @@ var ShellUserVerifier = class {
+             this._cancelAndReset();
+     }
+ 
+-    _updateDefaultService() {
+-        const oldDefaultService = this._defaultService;
+-
++    _getDetectedDefaultService() {
+         if (this._smartcardManager?.loggedInWithToken())
+-            this._defaultService = SMARTCARD_SERVICE_NAME;
++            return SMARTCARD_SERVICE_NAME;
+         else if (this._settings.get_boolean(PASSWORD_AUTHENTICATION_KEY))
+-            this._defaultService = PASSWORD_SERVICE_NAME;
++            return PASSWORD_SERVICE_NAME;
+         else if (this._smartcardManager)
+-            this._defaultService = SMARTCARD_SERVICE_NAME;
++            return SMARTCARD_SERVICE_NAME;
+         else if (this._fingerprintReaderType !== FingerprintReaderType.NONE)
+-            this._defaultService = FINGERPRINT_SERVICE_NAME;
++            return FINGERPRINT_SERVICE_NAME;
++        return null;
++    }
++
++    _updateDefaultService() {
++        const oldDefaultService = this._defaultService;
++        this._defaultService = this._getDetectedDefaultService();
+ 
+         if (!this._defaultService) {
+             log("no authentication service is enabled, using password authentication");
+-- 
+2.51.0
+
+
+From ce03df5761df3c8571c18c0f291450ccb5ca37cc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 12 Apr 2022 17:20:58 +0200
+Subject: [PATCH 10/13] gdm/utils: Pass cancellable to the FPrint Device proxy
+ and avoid signals
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index e9ed77e0c9..7adeaebfa1 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -410,8 +410,8 @@ export class ShellUserVerifier extends Signals.EventEmitter {
+         const args = cancellable ? [cancellable] : [];
+         const [devicePath] = await fprintManager.GetDefaultDeviceAsync(...args);
+         const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
+-            'net.reactivated.Fprint',
+-            devicePath);
++            'net.reactivated.Fprint', devicePath, null, cancellable,
++            Gio.DBusProxyFlags.NOT_CONNECT_SIGNALS);
+         this._setFingerprintReaderType(fprintDeviceProxy['scan-type']);
+         this._updateDefaultService();
+ 
+-- 
+2.51.0
+
+
+From fa25156a6ce0765dfce5a4d5cfe25b3eaa2257f6 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 12 Apr 2022 17:28:57 +0200
+Subject: [PATCH 11/13] gdm/util: Use fully async call to setup the fingerprint
+ device proxy
+
+Since fingerprint service can now be started also if a conversation has
+already began, we can also initialize the proxy asynchronously, without
+the risk that the service won't be started early enough.
+
+As per this, remove the usage of FprintDeviceProxy wrapper completely
+since it's just not giving us anything here.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 25 +++++++++++++++++--------
+ 1 file changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index eb81b34..a980918 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -15,8 +15,8 @@ const SmartcardManager = imports.misc.smartcardManager;
+ 
+ const FprintManagerInfo = Gio.DBusInterfaceInfo.new_for_xml(
+     loadInterfaceXML('net.reactivated.Fprint.Manager'));
+-const FprintDeviceIface = loadInterfaceXML('net.reactivated.Fprint.Device');
+-const FprintDeviceProxy = Gio.DBusProxy.makeProxyWrapper(FprintDeviceIface);
++const FprintDeviceInfo = Gio.DBusInterfaceInfo.new_for_xml(
++    loadInterfaceXML('net.reactivated.Fprint.Device'));
+ 
+ Gio._promisify(Gdm.Client.prototype,
+     'open_reauthentication_channel', 'open_reauthentication_channel_finish');
+@@ -395,9 +395,8 @@ var ShellUserVerifier = class {
+                 const [devicePath] = fprintManager.GetDefaultDeviceSync();
+                 this._fprintManager = fprintManager;
+ 
+-                const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
+-                    'net.reactivated.Fprint', devicePath, null, null,
+-                    Gio.DBusProxyFlags.NOT_CONNECT_SIGNALS);
++                const fprintDeviceProxy = this._getFingerprintDeviceProxy(devicePath);
++                fprintDeviceProxy.init(null);
+                 this._setFingerprintReaderType(fprintDeviceProxy['scan-type']);
+             } else {
+                 // Ensure fingerprint service starts, but do not wait for it
+@@ -411,6 +410,17 @@ var ShellUserVerifier = class {
+         }
+     }
+ 
++    _getFingerprintDeviceProxy(devicePath) {
++        return new Gio.DBusProxy({
++            g_connection: Gio.DBus.system,
++            g_name: 'net.reactivated.Fprint',
++            g_object_path: devicePath,
++            g_interface_name: FprintDeviceInfo.name,
++            g_interface_info: FprintDeviceInfo,
++            g_flags: Gio.DBusProxyFlags.DO_NOT_CONNECT_SIGNALS,
++        });
++    }
++
+     _handleFingerprintError(e) {
+         this._fingerprintReaderType = FingerprintReaderType.NONE;
+ 
+@@ -443,9 +453,8 @@ var ShellUserVerifier = class {
+         // Wrappers don't support null cancellable, so let's ignore it in case
+         const args = cancellable ? [cancellable] : [];
+         const [devicePath] = await fprintManager.GetDefaultDeviceAsync(...args);
+-        const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
+-            'net.reactivated.Fprint', devicePath, null, cancellable,
+-            Gio.DBusProxyFlags.NOT_CONNECT_SIGNALS);
++        const fprintDeviceProxy = this._getFingerprintDeviceProxy(devicePath);
++        await fprintDeviceProxy.init_async(GLib.PRIORITY_DEFAULT, cancellable);
+         this._setFingerprintReaderType(fprintDeviceProxy['scan-type']);
+         this._updateDefaultService();
+ 
+-- 
+2.51.0
+
+
+From 7552875dbc78eb52e7d3b5a9f784c175ecca585c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marco=20Trevisan=20=28Trevi=C3=B1o=29?= <mail@3v1n0.net>
+Date: Tue, 12 Apr 2022 17:05:02 +0200
+Subject: [PATCH 12/13] gdm/util: Reduce the fprintd proxy wait timeout
+
+Given that this may lead to the shell to hang on gdm startup, and that
+we expect the service to be up and running quickly, we can safely set a
+5 seconds timeout instead of using the longer GLib proxy defaults.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/2267>
+---
+ js/gdm/util.js | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index a980918..924bd2d 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -46,6 +46,7 @@ var DISABLE_USER_LIST_KEY = 'disable-user-list';
+ 
+ // Give user 48ms to read each character of a PAM message
+ var USER_READ_TIME = 48;
++const FINGERPRINT_SERVICE_PROXY_TIMEOUT = 5000;
+ const FINGERPRINT_ERROR_TIMEOUT_WAIT = 15;
+ 
+ var MessageType = {
+@@ -392,6 +393,10 @@ var ShellUserVerifier = class {
+                 // option, so go ahead a synchronously look for a fingerprint device
+                 // during startup or default service update.
+                 fprintManager.init(null);
++                // Do not wait too much for fprintd to reply, as in case it hangs
++                // we should fail early without having the shell to misbehave
++                fprintManager.set_default_timeout(FINGERPRINT_SERVICE_PROXY_TIMEOUT);
++
+                 const [devicePath] = fprintManager.GetDefaultDeviceSync();
+                 this._fprintManager = fprintManager;
+ 
+-- 
+2.51.0
+
+
+From 9075fc4733c62de18ab6c83e0aa32d26dd055569 Mon Sep 17 00:00:00 2001
+From: Joan Torres <joantolo@redhat.com>
+Date: Mon, 9 Mar 2026 15:26:50 +0100
+Subject: [PATCH 13/13] gdm/util: Fix fprintManager DBus calls for older GJS
+
+The auto-generated GetDefaultDeviceSync/Async method wrappers don't
+exist in this version. Use explicit call_sync/call methods instead.
+---
+ js/gdm/util.js | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 105d5d4..38a7015 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -26,6 +26,8 @@ Gio._promisify(Gdm.UserVerifierProxy.prototype,
+     'call_begin_verification_for_user', 'call_begin_verification_for_user_finish');
+ Gio._promisify(Gdm.UserVerifierProxy.prototype,
+     'call_begin_verification', 'call_begin_verification_finish');
++Gio._promisify(Gio.DBusProxy.prototype,
++    'call', 'call_finish');
+ 
+ var PASSWORD_SERVICE_NAME = 'gdm-password';
+ var FINGERPRINT_SERVICE_NAME = 'gdm-fingerprint';
+@@ -397,7 +399,13 @@ var ShellUserVerifier = class {
+                 // we should fail early without having the shell to misbehave
+                 fprintManager.set_default_timeout(FINGERPRINT_SERVICE_PROXY_TIMEOUT);
+ 
+-                const [devicePath] = fprintManager.GetDefaultDeviceSync();
++                const result = fprintManager.call_sync(
++                    'GetDefaultDevice',
++                    null,
++                    Gio.DBusCallFlags.NONE,
++                    FINGERPRINT_SERVICE_PROXY_TIMEOUT,
++                    null);
++                const [devicePath] = result.deep_unpack();
+                 this._fprintManager = fprintManager;
+ 
+                 const fprintDeviceProxy = this._getFingerprintDeviceProxy(devicePath);
+@@ -455,9 +463,13 @@ var ShellUserVerifier = class {
+     }
+ 
+     async _updateFingerprintReaderType(fprintManager, cancellable) {
+-        // Wrappers don't support null cancellable, so let's ignore it in case
+-        const args = cancellable ? [cancellable] : [];
+-        const [devicePath] = await fprintManager.GetDefaultDeviceAsync(...args);
++        const result = await fprintManager.call(
++            'GetDefaultDevice',
++            null,
++            Gio.DBusCallFlags.NONE,
++            -1,
++            cancellable);
++        const [devicePath] = result.deep_unpack();
+         const fprintDeviceProxy = this._getFingerprintDeviceProxy(devicePath);
+         await fprintDeviceProxy.init_async(GLib.PRIORITY_DEFAULT, cancellable);
+         this._setFingerprintReaderType(fprintDeviceProxy['scan-type']);

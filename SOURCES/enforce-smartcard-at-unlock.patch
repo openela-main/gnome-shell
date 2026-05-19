@@ -74,7 +74,7 @@ index 72561daab..6b92e3564 100644
  
      _updateDefaultService() {
 -        if (this._settings.get_boolean(PASSWORD_AUTHENTICATION_KEY))
-+        if (this._smartcardManager.loggedInWithToken())
++        if (this._smartcardManager?.loggedInWithToken())
 +            this._defaultService = SMARTCARD_SERVICE_NAME;
 +        else if (this._settings.get_boolean(PASSWORD_AUTHENTICATION_KEY))
              this._defaultService = PASSWORD_SERVICE_NAME;
