@@ -1,0 +1,65 @@
+From d45377eaf231ac7ffa10a453c984381f5987f8ef Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 28 Jul 2020 17:50:58 +0200
+Subject: [PATCH 1/2] popupMenu: Ungrab when removing active menu
+
+While we do have some handling for removing the active menu, it has
+been a no-op for years. The bit that we really care about from the
+PopupMenuManager's point of view is the existing grab though. Drop
+that instead of calling _closeMenu() directly; ungrabbing will still
+call the method indirectly, and it will still be a no-op :-)
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/3022
+---
+ js/ui/popupMenu.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/js/ui/popupMenu.js b/js/ui/popupMenu.js
+index d30c15788c..f62ea9db5d 100644
+--- a/js/ui/popupMenu.js
++++ b/js/ui/popupMenu.js
+@@ -1217,7 +1217,7 @@ var PopupMenuManager = class {
+ 
+     removeMenu(menu) {
+         if (menu == this.activeMenu)
+-            this._closeMenu(false, menu);
++            this._grabHelper.ungrab({ actor: menu.actor });
+ 
+         let position = this._findMenu(menu);
+         if (position == -1) // not a menu we manage
+-- 
+2.53.0
+
+
+From a9e97a09d0fdeab7de434710440e041fa51ea386 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Tue, 28 Jul 2020 18:52:53 +0200
+Subject: [PATCH 2/2] panelMenu: Destroy menu before chaining up
+
+This avoid some (harmless but annoying) warnings, and is closer to
+the original code prior to commit fc342fe8c5 and 557b232c896.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/3022
+---
+ js/ui/panelMenu.js | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/js/ui/panelMenu.js b/js/ui/panelMenu.js
+index bafafc11e6..eba1c7a1b0 100644
+--- a/js/ui/panelMenu.js
++++ b/js/ui/panelMenu.js
+@@ -186,10 +186,9 @@ var Button = GObject.registerClass({
+     }
+ 
+     _onDestroy() {
+-        super._onDestroy();
+-
+         if (this.menu)
+             this.menu.destroy();
++        super._onDestroy();
+     }
+ });
+ 
+-- 
+2.53.0
+

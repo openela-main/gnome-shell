@@ -6,7 +6,7 @@
 
 Name:           gnome-shell
 Version:        3.32.2
-Release:        58%{?dist}
+Release:        59%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -79,6 +79,7 @@ Patch63: owe-support.patch
 Patch64: 0001-windowMenu-Ignore-release.patch
 Patch65: 0001-overview-Hide-the-overview-on-session-mode-hasOvervi.patch
 Patch66: 0001-st-theme-Reuse-stylesheets-if-possible.patch
+Patch67: fix-dropping-menu-grab.patch
 
 # Backport JS invalid access warnings (#1651894, #1663171, #1642482, #1637622)
 Patch70: fix-invalid-access-warnings.patch
@@ -305,6 +306,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Wed May 13 2026 Florian Müllner <fmuellner@redhat.com> - 3.32.2-59
+- Fix dropping menu grab on destroy
+  Resolves: RHEL-171948
+
 * Thu Aug 21 2025 Joan Torres Lopez <joantolo@redhat.com> - 3.32.2-58
 - Don't hard depend on gnome-session-xsession to allow
   using other session types, e.g. wayland
