@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        34%{?dist}
+Release:        35%{?dist}.1
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -39,6 +39,7 @@ Patch20: 0001-systemActions-Optionally-allow-restart-shutdown-on-l.patch
 Patch21: 0001-authPrompt-Connect-disable-show-password-key-with-pa.patch
 Patch22: 0001-gdm-util-Early-initialize-all-internal-properties.patch
 Patch23: 0001-main-Register-session-with-GDM-on-startup.patch
+Patch24: 0001-loginManager-Update-RegisterSession.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -308,6 +309,15 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Fri May 29 2026 Joan Tomas Pelka <tpelka@redhat.com> - 40.10-35.1
+- triggering a new build in correct target
+  Resolves: RHEL-178703
+
+* Mon May 25 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-35
+- Update fix of registering session
+  Registering the display is needed too
+  Resolves: RHEL-178703
+
 * Mon Mar 9 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-34
 - Fix to automatically start fingerprint when enabled
   Resolves: RHEL-4166
