@@ -4,13 +4,13 @@ Date: Tue, 16 Apr 2024 20:49:40 +0200
 Subject: [PATCH] data: Update generated stylesheets
 
 ---
- data/theme/gnome-shell-dark.css          | 468 +++++++++++++++++-----
- data/theme/gnome-shell-high-contrast.css | 484 ++++++++++++++++++-----
- data/theme/gnome-shell-light.css         | 467 +++++++++++++++++-----
- 3 files changed, 1095 insertions(+), 324 deletions(-)
+ data/theme/gnome-shell-dark.css          | 492 +++++++++++++++++-----
+ data/theme/gnome-shell-high-contrast.css | 508 ++++++++++++++++++-----
+ data/theme/gnome-shell-light.css         | 491 +++++++++++++++++-----
+ 3 files changed, 1161 insertions(+), 330 deletions(-)
 
 diff --git a/data/theme/gnome-shell-dark.css b/data/theme/gnome-shell-dark.css
-index 82e68c5..a96fde1 100644
+index 82e68c5..e112db8 100644
 --- a/data/theme/gnome-shell-dark.css
 +++ b/data/theme/gnome-shell-dark.css
 @@ -42,7 +42,9 @@ stage {
@@ -567,23 +567,38 @@ index 82e68c5..a96fde1 100644
  .login-dialog,
  .unlock-dialog {
    color: #fafafb; }
-@@ -3044,19 +3092,62 @@ StScrollBar {
+@@ -3042,21 +3090,88 @@ StScrollBar {
+     color: #fafafb; }
+   .login-dialog .login-dialog-prompt-layout,
    .unlock-dialog .login-dialog-prompt-layout {
-     width: 25em;
-     spacing: 9px; }
+-    width: 25em;
++    width: 30em;
++    margin-top: 80px; }
 +    .login-dialog .login-dialog-prompt-layout.web-login-active,
 +    .unlock-dialog .login-dialog-prompt-layout.web-login-active {
-+      width: 37.5em; }
++      width: 37.5em;
++      margin-top: 0; }
++  .login-dialog .login-dialog-input-well,
++  .unlock-dialog .login-dialog-input-well {
+     spacing: 9px; }
 +  .login-dialog .login-dialog-prompt-entry-area,
 +  .unlock-dialog .login-dialog-prompt-entry-area {
 +    margin: 0.5em 20px; }
 +  .login-dialog .login-dialog-prompt-entry,
 +  .unlock-dialog .login-dialog-prompt-entry {
-+    border-radius: 12px;
-+    padding-right: 3em; }
-+  .login-dialog .login-dialog-default-button-well,
-+  .unlock-dialog .login-dialog-default-button-well {
-+    margin-right: 1em; }
++    border-radius: 12px; }
++    .login-dialog .login-dialog-prompt-entry :ltr,
++    .unlock-dialog .login-dialog-prompt-entry :ltr {
++      padding-right: 2.5em; }
++    .login-dialog .login-dialog-prompt-entry :rtl,
++    .unlock-dialog .login-dialog-prompt-entry :rtl {
++      padding-left: 2.5em; }
++  .login-dialog .login-dialog-default-button-well :ltr,
++  .unlock-dialog .login-dialog-default-button-well :ltr {
++    margin-right: 0.5em; }
++  .login-dialog .login-dialog-default-button-well :rtl,
++  .unlock-dialog .login-dialog-default-button-well :rtl {
++    margin-left: 0.5em; }
  
  .login-dialog-bottom-button-group {
    padding: 32px;
@@ -599,33 +614,45 @@ index 82e68c5..a96fde1 100644
 +
  .login-dialog-button.cancel-button {
 -  padding: 9px; }
-+  padding: 12px; }
++  padding: 12px;
++  margin: 0.5em 0; }
 +
 +.login-dialog-auth-menu-button-popup {
 +  padding: 18px;
 +  margin-right: 12px; }
-+  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-header {
-+    font-size: 0.909em;
-+    text-align: center;
-+    font-weight: bold;
-+    padding-top: 18px;
-+    padding-bottom: 6px; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-header:first-child {
-+      padding-top: 6px; }
-+  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator {
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section {
++    padding-top: 6px; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section:first-child {
++      padding-top: 0; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section-label {
++      font-size: 0.909em;
++      font-weight: bold;
++      color: #fafafb; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-icon {
++    color: #fafafb;
++    icon-size: 1.091em;
++    margin-right: 8px; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box {
 +    spacing: 3px; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator .login-dialog-auth-menu-item-indicator-name {
-+      font-size: 1.159em;
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-name {
++      color: #fafafb;
++      font-size: 1em;
 +      font-weight: bold; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator .login-dialog-auth-menu-item-indicator-description {
-+      font-size: 0.977em; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-description {
++      color: #fafafb;
++      font-size: 0.909em; }
 +
 +.login-dialog-auth-menu-button-indicator {
-+  background-color: transparent !important; }
++  background-color: transparent !important;
++  margin: 32px; }
 +  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons {
 +    spacing: 18px; }
 +    .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons .login-dialog-auth-menu-button-indicator-icon {
 +      icon-size: 2em; }
++  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-description {
++    font-size: 1em;
++    font-weight: normal;
++    margin-left: 12px; }
  
  .login-dialog-button-box {
 -  spacing: 12px; }
@@ -633,7 +660,7 @@ index 82e68c5..a96fde1 100644
  
  .conflicting-session-dialog-content {
    spacing: 20px; }
-@@ -3118,49 +3209,104 @@ StScrollBar {
+@@ -3118,49 +3233,104 @@ StScrollBar {
        background-color: st-mix(st-mix(-st-accent-color, #ffffff, 60%), st-lighten(#222226, 9%), 5%); }
  
  .login-dialog-auth-list-view {
@@ -703,8 +730,8 @@ index 82e68c5..a96fde1 100644
 +.login-dialog .login-dialog-auth-list-item {
 +  min-height: 3em;
 +  padding: 9px;
-+  margin: 0 20px;
-+  margin-bottom: 4px; }
++  margin-bottom: 4px;
++  margin-right: 4px; }
  
  .unlock-dialog .login-dialog-auth-list-item {
 -  border-radius: 9.6px;
@@ -712,29 +739,26 @@ index 82e68c5..a96fde1 100644
 +  border-radius: 12px;
 +  min-height: 3em;
 +  padding: 9px;
-+  margin: 0 20px;
-+  margin-bottom: 4px; }
++  margin-bottom: 4px;
++  margin-right: 4px; }
 +
 +.unlock-dialog .login-dialog-auth-list-title {
 +  background-color: transparent !important;
 +  color: #fafafb !important;
 +  padding: 0;
 +  margin: 0; }
- 
--.login-dialog-auth-list-label:ltr {
--  padding-left: 15px;
--  text-align: left; }
++
 +.login-dialog-auth-list-title-label {
 +  padding: 6px;
 +  text-align: center; }
  
--.login-dialog-auth-list-label:rtl {
--  padding-right: 15px;
--  text-align: right; }
+-.login-dialog-auth-list-label:ltr {
+-  padding-left: 15px;
+-  text-align: left; }
 +.login-dialog-auth-list-item-title,
 +.login-dialog-auth-list-item-subtitle {
 +  text-align: center;
-+  padding: 1.8px 0; }
++  padding: 1.8px 2em; }
 +
 +.login-dialog-auth-list-item-title {
 +  color: #fafafb; }
@@ -742,7 +766,10 @@ index 82e68c5..a96fde1 100644
 +.login-dialog-auth-list-item-subtitle {
 +  color: #c1c1ce;
 +  font-weight: 500; }
-+
+ 
+-.login-dialog-auth-list-label:rtl {
+-  padding-right: 15px;
+-  text-align: right; }
 +.login-dialog-item-icon {
 +  width: 1.3em;
 +  height: 1.3em;
@@ -764,7 +791,7 @@ index 82e68c5..a96fde1 100644
  
  .login-dialog-user-list-view {
    width: 25em;
-@@ -3189,6 +3335,9 @@ StScrollBar {
+@@ -3189,6 +3359,9 @@ StScrollBar {
            background-color: st-lighten(st-lighten(st-mix(#fafafb, #222226, 9%), 9%), 4%); }
          .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item:active:focus {
            background-color: st-mix(st-mix(-st-accent-color, #ffffff, 60%), st-lighten(st-mix(#fafafb, #222226, 9%), 9%), 5%); }
@@ -774,7 +801,7 @@ index 82e68c5..a96fde1 100644
        .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item .user-icon {
          border: 2px solid transparent; }
        .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item .login-dialog-timed-login-indicator {
-@@ -3200,6 +3349,102 @@ StScrollBar {
+@@ -3200,6 +3373,104 @@ StScrollBar {
          .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item:logged-in .user-icon StIcon {
            background-color: st-transparentize(-st-accent-color, 0.7); }
  
@@ -855,7 +882,8 @@ index 82e68c5..a96fde1 100644
 +    background-color: st-darken(st-mix(#fafafb, #222226, 9%), 3%); }
 +
 +.login-dialog .web-login-intro-button {
-+  padding: 0; }
++  padding: 0;
++  margin: 0.2em 20px; }
 +
 +.login-dialog .web-login-prompt-button {
 +  padding: 15px 24px;
@@ -867,7 +895,8 @@ index 82e68c5..a96fde1 100644
 +  border-radius: 32px; }
 +
 +.unlock-dialog .web-login-intro-button {
-+  padding: 0; }
++  padding: 0;
++  margin: 0.2em 20px; }
 +
 +.unlock-dialog .web-login-prompt-button {
 +  padding: 15px 24px;
@@ -877,19 +906,18 @@ index 82e68c5..a96fde1 100644
  .unlock-dialog {
    background-color: transparent; }
  
-@@ -3308,3 +3553,10 @@ StScrollBar {
-     .login-dialog .user-widget.vertical .user-icon StIcon,
-     .unlock-dialog .user-widget.vertical .user-icon StIcon {
-       padding: 30px; }
-+
-+.qr-code {
-+  border-radius: 4px;
-+  border-width: 1em;
-+  background-color: #fafafb;
-+  border-color: #fafafb;
-+  color: #222226; }
+@@ -3212,7 +3483,8 @@ StScrollBar {
+ 
+ .unlock-dialog-clock {
+   color: #fafafb;
+-  spacing: 2em; }
++  spacing: 2em;
++  margin-top: 150px; }
+   .unlock-dialog-clock .unlock-dialog-clock-time {
+     font-size: 6.546em;
+     font-weight: 800; }
 diff --git a/data/theme/gnome-shell-high-contrast.css b/data/theme/gnome-shell-high-contrast.css
-index b69823f..0ed28a3 100644
+index b69823f..bc41454 100644
 --- a/data/theme/gnome-shell-high-contrast.css
 +++ b/data/theme/gnome-shell-high-contrast.css
 @@ -42,7 +42,9 @@ stage {
@@ -1498,23 +1526,38 @@ index b69823f..0ed28a3 100644
  .login-dialog,
  .unlock-dialog {
    color: #ffffff; }
-@@ -3374,19 +3422,62 @@ StScrollBar {
+@@ -3372,21 +3420,88 @@ StScrollBar {
+     color: #ffffff; }
+   .login-dialog .login-dialog-prompt-layout,
    .unlock-dialog .login-dialog-prompt-layout {
-     width: 25em;
-     spacing: 9px; }
+-    width: 25em;
++    width: 30em;
++    margin-top: 80px; }
 +    .login-dialog .login-dialog-prompt-layout.web-login-active,
 +    .unlock-dialog .login-dialog-prompt-layout.web-login-active {
-+      width: 37.5em; }
++      width: 37.5em;
++      margin-top: 0; }
++  .login-dialog .login-dialog-input-well,
++  .unlock-dialog .login-dialog-input-well {
+     spacing: 9px; }
 +  .login-dialog .login-dialog-prompt-entry-area,
 +  .unlock-dialog .login-dialog-prompt-entry-area {
 +    margin: 0.5em 20px; }
 +  .login-dialog .login-dialog-prompt-entry,
 +  .unlock-dialog .login-dialog-prompt-entry {
-+    border-radius: 12px;
-+    padding-right: 3em; }
-+  .login-dialog .login-dialog-default-button-well,
-+  .unlock-dialog .login-dialog-default-button-well {
-+    margin-right: 1em; }
++    border-radius: 12px; }
++    .login-dialog .login-dialog-prompt-entry :ltr,
++    .unlock-dialog .login-dialog-prompt-entry :ltr {
++      padding-right: 2.5em; }
++    .login-dialog .login-dialog-prompt-entry :rtl,
++    .unlock-dialog .login-dialog-prompt-entry :rtl {
++      padding-left: 2.5em; }
++  .login-dialog .login-dialog-default-button-well :ltr,
++  .unlock-dialog .login-dialog-default-button-well :ltr {
++    margin-right: 0.5em; }
++  .login-dialog .login-dialog-default-button-well :rtl,
++  .unlock-dialog .login-dialog-default-button-well :rtl {
++    margin-left: 0.5em; }
  
  .login-dialog-bottom-button-group {
    padding: 32px;
@@ -1530,33 +1573,45 @@ index b69823f..0ed28a3 100644
 +
  .login-dialog-button.cancel-button {
 -  padding: 9px; }
-+  padding: 12px; }
++  padding: 12px;
++  margin: 0.5em 0; }
 +
 +.login-dialog-auth-menu-button-popup {
 +  padding: 18px;
 +  margin-right: 12px; }
-+  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-header {
-+    font-size: 0.909em;
-+    text-align: center;
-+    font-weight: bold;
-+    padding-top: 18px;
-+    padding-bottom: 6px; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-header:first-child {
-+      padding-top: 6px; }
-+  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator {
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section {
++    padding-top: 6px; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section:first-child {
++      padding-top: 0; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section-label {
++      font-size: 0.909em;
++      font-weight: bold;
++      color: #ffffff; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-icon {
++    color: #ffffff;
++    icon-size: 1.091em;
++    margin-right: 8px; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box {
 +    spacing: 3px; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator .login-dialog-auth-menu-item-indicator-name {
-+      font-size: 1.159em;
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-name {
++      color: #ffffff;
++      font-size: 1em;
 +      font-weight: bold; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator .login-dialog-auth-menu-item-indicator-description {
-+      font-size: 0.977em; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-description {
++      color: #ffffff;
++      font-size: 0.909em; }
 +
 +.login-dialog-auth-menu-button-indicator {
-+  background-color: transparent !important; }
++  background-color: transparent !important;
++  margin: 32px; }
 +  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons {
 +    spacing: 18px; }
 +    .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons .login-dialog-auth-menu-button-indicator-icon {
 +      icon-size: 2em; }
++  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-description {
++    font-size: 1em;
++    font-weight: normal;
++    margin-left: 12px; }
  
  .login-dialog-button-box {
 -  spacing: 12px; }
@@ -1564,7 +1619,7 @@ index b69823f..0ed28a3 100644
  
  .conflicting-session-dialog-content {
    spacing: 20px; }
-@@ -3455,53 +3546,112 @@ StScrollBar {
+@@ -3455,53 +3570,112 @@ StScrollBar {
        background-color: st-mix(st-mix(-st-accent-color, #ffffff, 60%), st-mix(st-lighten(#000000, 9%), #ffffff, 87%), 5%); }
  
  .login-dialog-auth-list-view {
@@ -1642,8 +1697,8 @@ index b69823f..0ed28a3 100644
 +.login-dialog .login-dialog-auth-list-item {
 +  min-height: 3em;
 +  padding: 9px;
-+  margin: 0 20px;
-+  margin-bottom: 4px; }
++  margin-bottom: 4px;
++  margin-right: 4px; }
  
  .unlock-dialog .login-dialog-auth-list-item {
 -  border-radius: 9.6px;
@@ -1651,15 +1706,18 @@ index b69823f..0ed28a3 100644
 +  border-radius: 12px;
 +  min-height: 3em;
 +  padding: 9px;
-+  margin: 0 20px;
-+  margin-bottom: 4px; }
++  margin-bottom: 4px;
++  margin-right: 4px; }
 +
 +.unlock-dialog .login-dialog-auth-list-title {
 +  background-color: transparent !important;
 +  color: #ffffff !important;
 +  padding: 0;
 +  margin: 0; }
-+
+ 
+-.login-dialog-auth-list-label:ltr {
+-  padding-left: 15px;
+-  text-align: left; }
 +.login-dialog-auth-list-title-label {
 +  padding: 6px;
 +  text-align: center; }
@@ -1667,17 +1725,14 @@ index b69823f..0ed28a3 100644
 +.login-dialog-auth-list-item-title,
 +.login-dialog-auth-list-item-subtitle {
 +  text-align: center;
-+  padding: 1.8px 0; }
- 
--.login-dialog-auth-list-label:ltr {
--  padding-left: 15px;
--  text-align: left; }
-+.login-dialog-auth-list-item-title {
-+  color: #ffffff; }
++  padding: 1.8px 2em; }
  
 -.login-dialog-auth-list-label:rtl {
 -  padding-right: 15px;
 -  text-align: right; }
++.login-dialog-auth-list-item-title {
++  color: #ffffff; }
++
 +.login-dialog-auth-list-item-subtitle {
 +  color: #cccccc;
 +  font-weight: 500; }
@@ -1703,7 +1758,7 @@ index b69823f..0ed28a3 100644
  
  .login-dialog-user-list-view {
    width: 25em;
-@@ -3534,6 +3684,13 @@ StScrollBar {
+@@ -3534,6 +3708,13 @@ StScrollBar {
            background-color: st-lighten(st-lighten(st-mix(#ffffff, #000000, 9%), 9%), 4%); }
          .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item:active:focus {
            background-color: st-mix(st-mix(-st-accent-color, #ffffff, 60%), st-mix(st-lighten(st-mix(#ffffff, #000000, 9%), 9%), #ffffff, 87%), 5%); }
@@ -1717,7 +1772,7 @@ index b69823f..0ed28a3 100644
        .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item .user-icon {
          border: 2px solid transparent; }
        .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item .login-dialog-timed-login-indicator {
-@@ -3545,6 +3702,110 @@ StScrollBar {
+@@ -3545,6 +3726,112 @@ StScrollBar {
          .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item:logged-in .user-icon StIcon {
            background-color: st-transparentize(-st-accent-color, 0.7); }
  
@@ -1806,7 +1861,8 @@ index b69823f..0ed28a3 100644
 +    border: none; }
 +
 +.login-dialog .web-login-intro-button {
-+  padding: 0; }
++  padding: 0;
++  margin: 0.2em 20px; }
 +
 +.login-dialog .web-login-prompt-button {
 +  padding: 15px 24px;
@@ -1818,7 +1874,8 @@ index b69823f..0ed28a3 100644
 +  border-radius: 32px; }
 +
 +.unlock-dialog .web-login-intro-button {
-+  padding: 0; }
++  padding: 0;
++  margin: 0.2em 20px; }
 +
 +.unlock-dialog .web-login-prompt-button {
 +  padding: 15px 24px;
@@ -1828,19 +1885,18 @@ index b69823f..0ed28a3 100644
  .unlock-dialog {
    background-color: transparent; }
  
-@@ -3655,3 +3916,10 @@ StScrollBar {
-     .login-dialog .user-widget.vertical .user-icon StIcon,
-     .unlock-dialog .user-widget.vertical .user-icon StIcon {
-       padding: 30px; }
-+
-+.qr-code {
-+  border-radius: 4px;
-+  border-width: 1em;
-+  background-color: #ffffff;
-+  border-color: #ffffff;
-+  color: #000000; }
+@@ -3557,7 +3844,8 @@ StScrollBar {
+ 
+ .unlock-dialog-clock {
+   color: #ffffff;
+-  spacing: 2em; }
++  spacing: 2em;
++  margin-top: 150px; }
+   .unlock-dialog-clock .unlock-dialog-clock-time {
+     font-size: 6.546em;
+     font-weight: 800; }
 diff --git a/data/theme/gnome-shell-light.css b/data/theme/gnome-shell-light.css
-index 2b67846..792690e 100644
+index 2b67846..c3288bb 100644
 --- a/data/theme/gnome-shell-light.css
 +++ b/data/theme/gnome-shell-light.css
 @@ -42,7 +42,9 @@ stage {
@@ -2396,23 +2452,38 @@ index 2b67846..792690e 100644
  .login-dialog,
  .unlock-dialog {
    color: #fafafb; }
-@@ -3045,19 +3092,62 @@ StScrollBar {
+@@ -3043,21 +3090,88 @@ StScrollBar {
+     color: #fafafb; }
+   .login-dialog .login-dialog-prompt-layout,
    .unlock-dialog .login-dialog-prompt-layout {
-     width: 25em;
-     spacing: 9px; }
+-    width: 25em;
++    width: 30em;
++    margin-top: 80px; }
 +    .login-dialog .login-dialog-prompt-layout.web-login-active,
 +    .unlock-dialog .login-dialog-prompt-layout.web-login-active {
-+      width: 37.5em; }
++      width: 37.5em;
++      margin-top: 0; }
++  .login-dialog .login-dialog-input-well,
++  .unlock-dialog .login-dialog-input-well {
+     spacing: 9px; }
 +  .login-dialog .login-dialog-prompt-entry-area,
 +  .unlock-dialog .login-dialog-prompt-entry-area {
 +    margin: 0.5em 20px; }
 +  .login-dialog .login-dialog-prompt-entry,
 +  .unlock-dialog .login-dialog-prompt-entry {
-+    border-radius: 12px;
-+    padding-right: 3em; }
-+  .login-dialog .login-dialog-default-button-well,
-+  .unlock-dialog .login-dialog-default-button-well {
-+    margin-right: 1em; }
++    border-radius: 12px; }
++    .login-dialog .login-dialog-prompt-entry :ltr,
++    .unlock-dialog .login-dialog-prompt-entry :ltr {
++      padding-right: 2.5em; }
++    .login-dialog .login-dialog-prompt-entry :rtl,
++    .unlock-dialog .login-dialog-prompt-entry :rtl {
++      padding-left: 2.5em; }
++  .login-dialog .login-dialog-default-button-well :ltr,
++  .unlock-dialog .login-dialog-default-button-well :ltr {
++    margin-right: 0.5em; }
++  .login-dialog .login-dialog-default-button-well :rtl,
++  .unlock-dialog .login-dialog-default-button-well :rtl {
++    margin-left: 0.5em; }
  
  .login-dialog-bottom-button-group {
    padding: 32px;
@@ -2428,33 +2499,45 @@ index 2b67846..792690e 100644
 +
  .login-dialog-button.cancel-button {
 -  padding: 9px; }
-+  padding: 12px; }
++  padding: 12px;
++  margin: 0.5em 0; }
 +
 +.login-dialog-auth-menu-button-popup {
 +  padding: 18px;
 +  margin-right: 12px; }
-+  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-header {
-+    font-size: 0.909em;
-+    text-align: center;
-+    font-weight: bold;
-+    padding-top: 18px;
-+    padding-bottom: 6px; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-header:first-child {
-+      padding-top: 6px; }
-+  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator {
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section {
++    padding-top: 6px; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section:first-child {
++      padding-top: 0; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section-label {
++      font-size: 0.909em;
++      font-weight: bold;
++      color: #fafafb; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-icon {
++    color: #fafafb;
++    icon-size: 1.091em;
++    margin-right: 8px; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box {
 +    spacing: 3px; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator .login-dialog-auth-menu-item-indicator-name {
-+      font-size: 1.159em;
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-name {
++      color: #fafafb;
++      font-size: 1em;
 +      font-weight: bold; }
-+    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-indicator .login-dialog-auth-menu-item-indicator-description {
-+      font-size: 0.977em; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-description {
++      color: #fafafb;
++      font-size: 0.909em; }
 +
 +.login-dialog-auth-menu-button-indicator {
-+  background-color: transparent !important; }
++  background-color: transparent !important;
++  margin: 32px; }
 +  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons {
 +    spacing: 18px; }
 +    .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons .login-dialog-auth-menu-button-indicator-icon {
 +      icon-size: 2em; }
++  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-description {
++    font-size: 1em;
++    font-weight: normal;
++    margin-left: 12px; }
  
  .login-dialog-button-box {
 -  spacing: 12px; }
@@ -2462,7 +2545,7 @@ index 2b67846..792690e 100644
  
  .conflicting-session-dialog-content {
    spacing: 20px; }
-@@ -3119,49 +3209,104 @@ StScrollBar {
+@@ -3119,49 +3233,104 @@ StScrollBar {
        background-color: st-mix(-st-accent-color, st-lighten(#222226, 9%), 5%); }
  
  .login-dialog-auth-list-view {
@@ -2532,8 +2615,8 @@ index 2b67846..792690e 100644
 +.login-dialog .login-dialog-auth-list-item {
 +  min-height: 3em;
 +  padding: 9px;
-+  margin: 0 20px;
-+  margin-bottom: 4px; }
++  margin-bottom: 4px;
++  margin-right: 4px; }
  
  .unlock-dialog .login-dialog-auth-list-item {
 -  border-radius: 9.6px;
@@ -2541,18 +2624,21 @@ index 2b67846..792690e 100644
 +  border-radius: 12px;
 +  min-height: 3em;
 +  padding: 9px;
-+  margin: 0 20px;
-+  margin-bottom: 4px; }
-+
++  margin-bottom: 4px;
++  margin-right: 4px; }
+ 
+-.login-dialog-auth-list-label:ltr {
+-  padding-left: 15px;
+-  text-align: left; }
 +.unlock-dialog .login-dialog-auth-list-title {
 +  background-color: transparent !important;
 +  color: #fafafb !important;
 +  padding: 0;
 +  margin: 0; }
  
--.login-dialog-auth-list-label:ltr {
--  padding-left: 15px;
--  text-align: left; }
+-.login-dialog-auth-list-label:rtl {
+-  padding-right: 15px;
+-  text-align: right; }
 +.login-dialog-auth-list-title-label {
 +  padding: 6px;
 +  text-align: center; }
@@ -2560,14 +2646,11 @@ index 2b67846..792690e 100644
 +.login-dialog-auth-list-item-title,
 +.login-dialog-auth-list-item-subtitle {
 +  text-align: center;
-+  padding: 1.8px 0; }
++  padding: 1.8px 2em; }
 +
 +.login-dialog-auth-list-item-title {
 +  color: #fafafb; }
- 
--.login-dialog-auth-list-label:rtl {
--  padding-right: 15px;
--  text-align: right; }
++
 +.login-dialog-auth-list-item-subtitle {
 +  color: #c1c1ce;
 +  font-weight: 500; }
@@ -2593,7 +2676,7 @@ index 2b67846..792690e 100644
  
  .login-dialog-user-list-view {
    width: 25em;
-@@ -3190,6 +3335,9 @@ StScrollBar {
+@@ -3190,6 +3359,9 @@ StScrollBar {
            background-color: st-lighten(st-lighten(st-mix(#fafafb, #222226, 12%), 9%), 4%); }
          .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item:active:focus {
            background-color: st-mix(-st-accent-color, st-lighten(st-mix(#fafafb, #222226, 12%), 9%), 5%); }
@@ -2603,7 +2686,7 @@ index 2b67846..792690e 100644
        .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item .user-icon {
          border: 2px solid transparent; }
        .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item .login-dialog-timed-login-indicator {
-@@ -3201,6 +3349,102 @@ StScrollBar {
+@@ -3201,6 +3373,104 @@ StScrollBar {
          .login-dialog-user-list-view .login-dialog-user-list .login-dialog-user-list-item:logged-in .user-icon StIcon {
            background-color: st-transparentize(-st-accent-color, 0.7); }
  
@@ -2684,7 +2767,8 @@ index 2b67846..792690e 100644
 +    background-color: st-darken(st-mix(#fafafb, #222226, 12%), 3%); }
 +
 +.login-dialog .web-login-intro-button {
-+  padding: 0; }
++  padding: 0;
++  margin: 0.2em 20px; }
 +
 +.login-dialog .web-login-prompt-button {
 +  padding: 15px 24px;
@@ -2696,7 +2780,8 @@ index 2b67846..792690e 100644
 +  border-radius: 32px; }
 +
 +.unlock-dialog .web-login-intro-button {
-+  padding: 0; }
++  padding: 0;
++  margin: 0.2em 20px; }
 +
 +.unlock-dialog .web-login-prompt-button {
 +  padding: 15px 24px;
@@ -2706,17 +2791,16 @@ index 2b67846..792690e 100644
  .unlock-dialog {
    background-color: transparent; }
  
-@@ -3309,3 +3553,10 @@ StScrollBar {
-     .login-dialog .user-widget.vertical .user-icon StIcon,
-     .unlock-dialog .user-widget.vertical .user-icon StIcon {
-       padding: 30px; }
-+
-+.qr-code {
-+  border-radius: 4px;
-+  border-width: 1em;
-+  background-color: #e9e9ea;
-+  border-color: #e9e9ea;
-+  color: #222226; }
+@@ -3213,7 +3483,8 @@ StScrollBar {
+ 
+ .unlock-dialog-clock {
+   color: #fafafb;
+-  spacing: 2em; }
++  spacing: 2em;
++  margin-top: 150px; }
+   .unlock-dialog-clock .unlock-dialog-clock-time {
+     font-size: 6.546em;
+     font-weight: 800; }
 -- 
-2.53.0
+2.54.0
 

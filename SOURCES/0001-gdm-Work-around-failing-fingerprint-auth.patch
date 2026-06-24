@@ -9,36 +9,38 @@ the PAM configuration has not been updated and no prints are enrolled.
 So, consider a verification failure within one second to be a service
 failure instead.
 ---
- js/gdm/authServicesLegacy.js | 44 +++++++++++++++++++++++++-----------
- 1 file changed, 31 insertions(+), 13 deletions(-)
+ js/gdm/authServicesLegacy.js | 47 ++++++++++++++++++++++++------------
+ 1 file changed, 32 insertions(+), 15 deletions(-)
 
 diff --git a/js/gdm/authServicesLegacy.js b/js/gdm/authServicesLegacy.js
-index 0813622a01..c85a9572f5 100644
+index 7b5739f14..99c034f64 100644
 --- a/js/gdm/authServicesLegacy.js
 +++ b/js/gdm/authServicesLegacy.js
-@@ -58,6 +58,7 @@ export class AuthServicesLegacy extends AuthServices {
-         this._addCredentialManager(Vmware.SERVICE_NAME, Vmware.getVmwareCredentialsManager());
+@@ -57,6 +57,7 @@ export class AuthServicesLegacy extends AuthServices {
+         this.addCredentialManager(Vmware.SERVICE_NAME, Vmware.getVmwareCredentialsManager());
  
          this._fingerprintReadyTimeoutId = 0;
 +        this._fprintStartTime = -1;
      }
  
      _handleSelectChoice(serviceName, key) {
-@@ -117,16 +118,20 @@ export class AuthServicesLegacy extends AuthServices {
+@@ -114,18 +115,21 @@ export class AuthServicesLegacy extends AuthServices {
      }
  
      _handleOnConversationStarted(serviceName) {
--        if (serviceName === Const.FINGERPRINT_SERVICE_NAME &&
--            this._fingerprintReadyTimeoutId === 0) {
--            this._fingerprintReadyTimeoutId = GLib.timeout_add(
--                GLib.PRIORITY_DEFAULT,
--                FINGERPRINT_READY_TIMEOUT_MS,
--                () => {
--                    this._fingerprintReadyTimeoutId = 0;
--                    this._setFingerprintReady();
--                    return GLib.SOURCE_REMOVE;
--                });
-+        if (serviceName === Const.FINGERPRINT_SERVICE_NAME) {
+-        if (serviceName !== Constants.FINGERPRINT_SERVICE_NAME ||
+-            this._fingerprintReadyTimeoutId !== 0)
+-            return;
+-
+-        this._fingerprintReadyTimeoutId = GLib.timeout_add(
+-            GLib.PRIORITY_DEFAULT,
+-            FINGERPRINT_READY_TIMEOUT_MS,
+-            () => {
+-                this._fingerprintReadyTimeoutId = 0;
+-                this._setFingerprintReady(true);
+-                return GLib.SOURCE_REMOVE;
+-            });
++        if (serviceName === Constants.FINGERPRINT_SERVICE_NAME) {
 +            this._fprintStartTime = GLib.get_monotonic_time();
 +
 +
@@ -48,14 +50,15 @@ index 0813622a01..c85a9572f5 100644
 +                    FINGERPRINT_READY_TIMEOUT_MS,
 +                    () => {
 +                        this._fingerprintReadyTimeoutId = 0;
-+                        this._setFingerprintReady();
++                        this._setFingerprintReady(true);
 +                        return GLib.SOURCE_REMOVE;
 +                    });
 +            }
-         }
++        }
      }
  
-@@ -234,6 +239,7 @@ export class AuthServicesLegacy extends AuthServices {
+     _setFingerprintReady(ready) {
+@@ -231,6 +235,7 @@ export class AuthServicesLegacy extends AuthServices {
  
              this._fingerprintFailedId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
                  FINGERPRINT_ERROR_TIMEOUT_WAIT, () => {
@@ -63,10 +66,10 @@ index 0813622a01..c85a9572f5 100644
                      this._fingerprintFailedId = 0;
                      if (!this._cancellable.is_cancelled())
                          this._verificationFailed(serviceName, false);
-@@ -314,9 +320,21 @@ export class AuthServicesLegacy extends AuthServices {
+@@ -312,9 +317,21 @@ export class AuthServicesLegacy extends AuthServices {
  
      _handleVerificationFailed(serviceName) {
-         if (serviceName === Const.FINGERPRINT_SERVICE_NAME &&
+         if (serviceName === Constants.FINGERPRINT_SERVICE_NAME &&
 -            this._enabledMechanisms.some(m => m.serviceName === serviceName) &&
 -            this._fingerprintFailedId)
 -            GLib.source_remove(this._fingerprintFailedId);
@@ -89,5 +92,5 @@ index 0813622a01..c85a9572f5 100644
  
      _handleOnVerificationComplete(serviceName) {
 -- 
-2.53.0
+2.54.0
 

@@ -1,0 +1,66 @@
+From 714332d3065a41e8bae61234cd231219cfcc95d6 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Tue, 3 Feb 2026 14:43:43 +0100
+Subject: [PATCH] main: Call RegisterDisplay once UI has initialized
+
+RegisterDisplay is called to signal that graphics have settled,
+which allows GDM to terminate pending greeters and plymouth.
+
+Previously, RegisterSession was used for both recording the login
+and terminating greeters. This caused a race condition where the
+new user shell was setting up while the greeter was tearing down,
+leading to configuration conflicts during the asynchronous handoff.
+
+By splitting into RegisterSession (called early to record login) and
+RegisterDisplay (called after graphics settle), the greeter teardown
+is delayed until the new session has completed its initial modeset.
+
+Fixes: 32a01330 ("main: Register session with GDM on startup")
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4057>
+---
+ js/misc/loginManager.js | 18 ++++++++++++++++++
+ js/ui/main.js           |  2 ++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/js/misc/loginManager.js b/js/misc/loginManager.js
+index f5b6a78..3714c5b 100644
+--- a/js/misc/loginManager.js
++++ b/js/misc/loginManager.js
+@@ -71,6 +71,24 @@ export async function registerSessionWithGDM() {
+     }
+ }
+
++export async function registerDisplayWithGDM() {
++    log('Registering display with GDM');
++    try {
++        await Gio.DBus.system.call(
++            'org.gnome.DisplayManager',
++            '/org/gnome/DisplayManager/Manager',
++            'org.gnome.DisplayManager.Manager',
++            'RegisterDisplay',
++            GLib.Variant.new('(a{ss})', [{}]), null,
++            Gio.DBusCallFlags.NONE, -1, null);
++    } catch (e) {
++        if (!e.matches(Gio.DBusError, Gio.DBusError.UNKNOWN_METHOD))
++            log(`Error registering display with GDM: ${e.message}`);
++        else
++            log('Not calling RegisterDisplay(): method not exported, GDM too old?');
++    }
++}
++
+ let _loginManager = null;
+
+ /**
+diff --git a/js/ui/main.js b/js/ui/main.js
+index a7df518..1e6fd39 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -384,6 +384,8 @@ async function _initializeUI() {
+             sessionMode.currentMode !== 'initial-setup')
+             _handleLockScreenWarning();
+
++        LoginManager.registerDisplayWithGDM();
++
+         if (perfModule) {
+             let perfOutput = GLib.getenv('SHELL_PERF_OUTPUT');
+             Scripting.runPerfScript(perfModule, perfOutput);
