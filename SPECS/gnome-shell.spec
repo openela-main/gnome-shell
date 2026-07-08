@@ -6,7 +6,7 @@
 
 Name:           gnome-shell
 Version:        3.32.2
-Release:        59%{?dist}
+Release:        60%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -17,108 +17,109 @@ URL:            https://wiki.gnome.org/Projects/GnomeShell
 Source0:        http://download.gnome.org/sources/gnome-shell/3.32/%{name}-%{version}.tar.xz
 
 # Replace Epiphany with Firefox in the default favourite apps list
-Patch1: gnome-shell-favourite-apps-firefox.patch
-Patch2: gnome-shell-favourite-apps-yelp.patch
-Patch3: gnome-shell-favourite-apps-terminal.patch
+Patch1001: gnome-shell-favourite-apps-firefox.patch
+Patch1002: gnome-shell-favourite-apps-yelp.patch
+Patch1003: gnome-shell-favourite-apps-terminal.patch
 
 # GDM/Lock stuff
-Patch12: 0001-screenShield-unblank-when-inserting-smartcard.patch
-Patch13: enforce-smartcard-at-unlock.patch
-Patch14: disable-unlock-entry-until-question.patch
-Patch15: allow-timed-login-with-no-user-list.patch
-Patch16: 0001-data-install-process-working.svg-to-filesystem.patch
-Patch17: 0001-loginDialog-make-info-messages-themed.patch
-Patch18: 0001-gdm-add-AuthList-control.patch
-Patch19: 0002-gdmUtil-enable-support-for-GDM-s-ChoiceList-PAM-exte.patch
-Patch20: wake-up-on-deactivate.patch
-Patch21: caps-lock-warning.patch
-Patch22: gdm-networking.patch
-Patch23: 0001-shellEntry-Disconnect-handler-on-destroy.patch
-Patch24: fix-login-lock-screen.patch
-Patch25: 0001-shellEntry-Determine-if-password-entry-from-content-.patch
-Patch26: 0002-shellEntry-Give-password-menu-item-text-when-it-s-cr.patch
-Patch27: 0003-shellEntry-Handle-password-item-from-dedication-func.patch
-Patch28: 0004-shellEntry-Support-lockdown-of-Show-Text-menu-in-pas.patch
-Patch29: 0005-shellEntry-Only-mask-text-in-password-entries.patch
+Patch2001: 0001-screenShield-unblank-when-inserting-smartcard.patch
+Patch2002: enforce-smartcard-at-unlock.patch
+Patch2003: disable-unlock-entry-until-question.patch
+Patch2004: allow-timed-login-with-no-user-list.patch
+Patch2005: 0001-data-install-process-working.svg-to-filesystem.patch
+Patch2006: 0001-loginDialog-make-info-messages-themed.patch
+Patch2007: 0001-gdm-add-AuthList-control.patch
+Patch2008: 0002-gdmUtil-enable-support-for-GDM-s-ChoiceList-PAM-exte.patch
+Patch2009: wake-up-on-deactivate.patch
+Patch2010: caps-lock-warning.patch
+Patch2011: gdm-networking.patch
+Patch2012: 0001-shellEntry-Disconnect-handler-on-destroy.patch
+Patch2013: fix-login-lock-screen.patch
+Patch2014: 0001-shellEntry-Determine-if-password-entry-from-content-.patch
+Patch2015: 0002-shellEntry-Give-password-menu-item-text-when-it-s-cr.patch
+Patch2016: 0003-shellEntry-Handle-password-item-from-dedication-func.patch
+Patch2017: 0004-shellEntry-Support-lockdown-of-Show-Text-menu-in-pas.patch
+Patch2018: 0005-shellEntry-Only-mask-text-in-password-entries.patch
+Patch2019: 0001-gdm-loginDialog-Reset-the-greeter-proxy-on-connectio.patch
 
 # Misc.
-Patch30: 0001-shellDBus-Add-a-DBus-method-to-load-a-single-extensi.patch
-Patch31: 0001-extensions-Add-a-SESSION_MODE-extension-type.patch
-Patch32: extension-updates.patch
-Patch33: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
-Patch34: 0001-app-Fall-back-to-window-title-instead-of-WM_CLASS.patch
-Patch35: 0001-windowMenu-Bring-back-workspaces-submenu-for-static-.patch
-Patch36: 0001-shell-app-Handle-workspace-from-startup-notification.patch
-Patch37: 0001-main-Dump-stack-on-segfaults-by-default.patch
-Patch38: 0001-appDisplay-Show-full-app-name-on-hover.patch
-Patch39: horizontal-workspace-support.patch
-Patch40: 0001-animation-fix-unintentional-loop-while-polkit-dialog.patch
-Patch41: 0001-workspacesView-Work-around-spurious-allocation-chang.patch
-Patch42: 0001-layout-Make-the-hot-corner-optional.patch
-Patch43: fix-app-view-leaks.patch
-Patch44: root-warning.patch
-Patch45: 0001-workspace-Pass-device-to-startDrag.patch
-Patch46: 0001-a11y-Change-HC-icon-theme-first.patch
-Patch47: perf-tool-wayland.patch
-Patch48: 0001-padOsd-Re-query-action-labels-after-mode-switches.patch
-Patch49: 0001-Do-not-change-Wacom-LEDs-through-g-s-d.patch
-Patch50: 0001-st-texture-cache-Cancel-pending-requests-on-icon-the.patch
-Patch51: introspect-backports.patch
-Patch52: 0001-popupMenu-Handle-keypress-if-numlock-is-enabled.patch
-Patch53: 0001-theme-Update-window-preview-style.patch
-Patch54: warn-less.patch
-Patch55: 0001-networkAgent-add-support-for-SAE-secrets.patch
-Patch56: 0001-main-Unset-the-right-prevFocus-actor-after-the-focus.patch
-Patch57: defend-against-corrupt-notifications.patch
-Patch58: 0001-status-volume-Hide-sliders-initially.patch
-Patch59: 0001-shell-recorder-Restore-cursor-recording.patch
-Patch60: 0001-st-bin-Disallow-st_bin_set_child-with-already-parent.patch
-Patch61: 0001-layout-Initialize-regions-unconditionally.patch
-Patch62: fix-nm-device-settings.patch
-Patch63: owe-support.patch
-Patch64: 0001-windowMenu-Ignore-release.patch
-Patch65: 0001-overview-Hide-the-overview-on-session-mode-hasOvervi.patch
-Patch66: 0001-st-theme-Reuse-stylesheets-if-possible.patch
-Patch67: fix-dropping-menu-grab.patch
+Patch3001: 0001-shellDBus-Add-a-DBus-method-to-load-a-single-extensi.patch
+Patch3002: 0001-extensions-Add-a-SESSION_MODE-extension-type.patch
+Patch3003: extension-updates.patch
+Patch3004: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
+Patch3005: 0001-app-Fall-back-to-window-title-instead-of-WM_CLASS.patch
+Patch3006: 0001-windowMenu-Bring-back-workspaces-submenu-for-static-.patch
+Patch3007: 0001-shell-app-Handle-workspace-from-startup-notification.patch
+Patch3008: 0001-main-Dump-stack-on-segfaults-by-default.patch
+Patch3009: 0001-appDisplay-Show-full-app-name-on-hover.patch
+Patch3010: horizontal-workspace-support.patch
+Patch3011: 0001-animation-fix-unintentional-loop-while-polkit-dialog.patch
+Patch3012: 0001-workspacesView-Work-around-spurious-allocation-chang.patch
+Patch3013: 0001-layout-Make-the-hot-corner-optional.patch
+Patch3014: fix-app-view-leaks.patch
+Patch3015: root-warning.patch
+Patch3016: 0001-workspace-Pass-device-to-startDrag.patch
+Patch3017: 0001-a11y-Change-HC-icon-theme-first.patch
+Patch3018: perf-tool-wayland.patch
+Patch3019: 0001-padOsd-Re-query-action-labels-after-mode-switches.patch
+Patch3020: 0001-Do-not-change-Wacom-LEDs-through-g-s-d.patch
+Patch3021: 0001-st-texture-cache-Cancel-pending-requests-on-icon-the.patch
+Patch3022: introspect-backports.patch
+Patch3023: 0001-popupMenu-Handle-keypress-if-numlock-is-enabled.patch
+Patch3024: 0001-theme-Update-window-preview-style.patch
+Patch3025: warn-less.patch
+Patch3026: 0001-networkAgent-add-support-for-SAE-secrets.patch
+Patch3027: 0001-main-Unset-the-right-prevFocus-actor-after-the-focus.patch
+Patch3028: defend-against-corrupt-notifications.patch
+Patch3029: 0001-status-volume-Hide-sliders-initially.patch
+Patch3030: 0001-shell-recorder-Restore-cursor-recording.patch
+Patch3031: 0001-st-bin-Disallow-st_bin_set_child-with-already-parent.patch
+Patch3032: 0001-layout-Initialize-regions-unconditionally.patch
+Patch3033: fix-nm-device-settings.patch
+Patch3034: owe-support.patch
+Patch3035: 0001-windowMenu-Ignore-release.patch
+Patch3036: 0001-overview-Hide-the-overview-on-session-mode-hasOvervi.patch
+Patch3037: 0001-st-theme-Reuse-stylesheets-if-possible.patch
+Patch3038: fix-dropping-menu-grab.patch
 
 # Backport JS invalid access warnings (#1651894, #1663171, #1642482, #1637622)
-Patch70: fix-invalid-access-warnings.patch
-Patch71: more-spurious-allocation-warnings.patch
-Patch72: fix-some-js-warnings.patch
-Patch73: fix-double-disposed-backgrounds.patch
+Patch4001: fix-invalid-access-warnings.patch
+Patch4002: more-spurious-allocation-warnings.patch
+Patch4003: fix-some-js-warnings.patch
+Patch4004: fix-double-disposed-backgrounds.patch
 
 # Backport performance fixes under load (#1820760)
-Patch80: 0001-environment-reduce-calls-to-g_time_zone_new_local.patch
-Patch81: 0002-environment-Fix-date-conversion.patch
-Patch82: 0003-shell-app-system-Monitor-for-icon-theme-changes.patch
-Patch83: 0004-global-force-fsync-to-worker-thread-when-saving-stat.patch
-Patch84: 0005-app-cache-add-ShellAppCache-for-GAppInfo-caching.patch
-Patch85: 0006-js-Always-use-AppSystem-to-lookup-apps.patch
+Patch5001: 0001-environment-reduce-calls-to-g_time_zone_new_local.patch
+Patch5002: 0002-environment-Fix-date-conversion.patch
+Patch5003: 0003-shell-app-system-Monitor-for-icon-theme-changes.patch
+Patch5004: 0004-global-force-fsync-to-worker-thread-when-saving-stat.patch
+Patch5005: 0005-app-cache-add-ShellAppCache-for-GAppInfo-caching.patch
+Patch5006: 0006-js-Always-use-AppSystem-to-lookup-apps.patch
 
 # Stop screen recording on monitor changes (#1705392)
-Patch90: 0001-screencast-Stop-recording-when-screen-size-or-resour.patch
+Patch6001: 0001-screencast-Stop-recording-when-screen-size-or-resour.patch
 
 # Backport OSK fixes (#1871041)
-Patch95: osk-fixes.patch
-Patch96: 0001-keyboard-Only-enable-keyboard-if-ClutterDeviceManage.patch
+Patch7001: osk-fixes.patch
+Patch7002: 0001-keyboard-Only-enable-keyboard-if-ClutterDeviceManage.patch
 
 # suspend/resume fix on nvidia (#1663440)
-Patch10001: 0001-background-refresh-after-suspend-on-wayland.patch
-Patch10002: 0002-background-rebuild-background-not-just-animation-on-.patch
-Patch10003: 0003-st-texture-cache-purge-on-resume.patch
-Patch10004: 0004-background-refresh-background-on-gl-video-memory-pur.patch
+Patch8001: 0001-background-refresh-after-suspend-on-wayland.patch
+Patch8002: 0002-background-rebuild-background-not-just-animation-on-.patch
+Patch8003: 0003-st-texture-cache-purge-on-resume.patch
+Patch8004: 0004-background-refresh-background-on-gl-video-memory-pur.patch
 
 # Allow login screen extensions (#1651378)
-Patch20001: 0001-extensionSystem-Handle-added-or-removed-sessionMode-.patch
-Patch20002: 0002-extensionSystem-Get-rid-of-_enabled-boolean-optimiza.patch
-Patch20003: 0003-extensionSystem-Allow-extensions-to-run-on-the-login.patch
-Patch20004: 0004-sessionMode-Allow-extensions-at-the-login-and-unlock.patch
+Patch9001: 0001-extensionSystem-Handle-added-or-removed-sessionMode-.patch
+Patch9002: 0002-extensionSystem-Get-rid-of-_enabled-boolean-optimiza.patch
+Patch9003: 0003-extensionSystem-Allow-extensions-to-run-on-the-login.patch
+Patch9004: 0004-sessionMode-Allow-extensions-at-the-login-and-unlock.patch
 
 # CVE-2020-17489
-Patch30001: 0001-loginDialog-Reset-auth-prompt-on-vt-switch-before-fa.patch
+Patch10001: 0001-loginDialog-Reset-auth-prompt-on-vt-switch-before-fa.patch
 
 # Disable captive portal helper if WebKitGTK is not installed (RHEL-10488)
-Patch40001: portal-notify.patch
+Patch11001: portal-notify.patch
 
 %define libcroco_version 0.6.8
 %define eds_version 3.17.2
@@ -306,6 +307,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Wed Jun 17 2026 Joan Torres Lopez <joantolo@redhat.com> - 3.32.2-60
+- Backport fix to recover userVerifier
+  Resolves: RHEL-185731
+
 * Wed May 13 2026 Florian Müllner <fmuellner@redhat.com> - 3.32.2-59
 - Fix dropping menu grab on destroy
   Resolves: RHEL-171948

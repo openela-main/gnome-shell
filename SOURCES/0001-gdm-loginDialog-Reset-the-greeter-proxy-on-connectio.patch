@@ -1,0 +1,270 @@
+From 1b3edde30bac1bb4944b56e59cbc7f1412a90a3d Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Wed, 17 Jun 2026 09:54:57 +0200
+Subject: [PATCH 1/5] loginDialog: Don't reconnect on each reset with gdmClient
+
+When resetting the greeter proxy, it's destroyed and then recreated
+again.
+
+This destroy/recreate thing doesn't give any info to GDM and the greeter
+interface destroyed has the same state as the newly created one.
+
+Each time get_greeter_sync is called when greeter is destroyed makes GDM
+create a new connection which stores in a list. This means that for each
+reset a new unnecessary connection is created and stored.
+
+GDM was leaking some objects which combined with this excessive connection
+creation was causing a fd leak on each reset.
+
+To make better use of resources and avoid problems, use ensure instead
+of reset greeter proxy.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3749>
+---
+ js/gdm/loginDialog.js | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index eb6846d..c5e8853 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -815,11 +815,11 @@ var LoginDialog = GObject.registerClass({
+         this._showPrompt();
+     }
+ 
+-    _resetGreeterProxy() {
++    _ensureGreeterProxy() {
+         if (GLib.getenv('GDM_GREETER_TEST') != '1') {
+-            if (this._greeter) {
+-                this._greeter.run_dispose();
+-            }
++            if (this._greeter)
++                return;
++
+             this._greeter = this._gdmClient.get_greeter_sync(null);
+ 
+             this._defaultSessionChangedId = this._greeter.connect('default-session-name-changed',
+@@ -832,7 +832,7 @@ var LoginDialog = GObject.registerClass({
+     }
+ 
+     _onReset(authPrompt, beginRequest) {
+-        this._resetGreeterProxy();
++        this._ensureGreeterProxy();
+         this._sessionMenuButton.updateSensitivity(true);
+ 
+         this._user = null;
+-- 
+2.54.0
+
+
+From fb0f4366393fef39e13a2b233c57900db6661198 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Wed, 17 Jun 2026 09:56:25 +0200
+Subject: [PATCH 2/5] gdm/loginDialog: Reset the greeter proxy on connection
+ closed
+
+If gdm fails to start the display session the greeter proxy we are using
+gets disconnected, however since commit 56ea95f2 we are now preserving
+the greeter instance, and this will eventually lead to using an instance
+of a disconnected proxy.
+
+This eventually implies that after a login failure, we would never get
+the `::session-opened` signal that actually triggers the session start.
+
+And thus, even the user has properly authenticated, gdm will stick to
+the authentication page.
+
+So, instead of reverting such commit (that isn't wrong per se), consume
+the greeter proxy connection `::closed` signal and use it to
+re-initialize the greeter instance.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3885>
+---
+ js/gdm/loginDialog.js | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index c5e8853..613b97e 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -822,6 +822,14 @@ var LoginDialog = GObject.registerClass({
+ 
+             this._greeter = this._gdmClient.get_greeter_sync(null);
+ 
++            this._greeterConnectionClosedId =
++                this._greeter.get_connection().connect('closed', conn => {
++                    conn.disconnect(this._greeterConnectionClosedId);
++                    this._greeterConnectionClosedId = 0;
++                    this._greeter = null;
++                    this._ensureGreeterProxy();
++                });
++
+             this._defaultSessionChangedId = this._greeter.connect('default-session-name-changed',
+                                                                   this._onDefaultSessionChanged.bind(this));
+             this._sessionOpenedId = this._greeter.connect('session-opened',
+@@ -1191,6 +1199,10 @@ var LoginDialog = GObject.registerClass({
+             this._settings = null;
+         }
+         if (this._greeter) {
++            if (this._greeterConnectionClosedId) {
++                this._greeter.get_connection().disconnect(this._greeterConnectionClosedId);
++                this._greeterConnectionClosedId = 0;
++            }
+             this._greeter.disconnect(this._defaultSessionChangedId);
+             this._greeter.disconnect(this._sessionOpenedId);
+             this._greeter.disconnect(this._timedLoginRequestedId);
+-- 
+2.54.0
+
+
+From be05549008e57ac8f73211abf43e183eeb661292 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Wed, 17 Jun 2026 10:03:00 +0200
+Subject: [PATCH 3/5] gdm/util: Clear the request if user verifier connection
+ is closed
+
+Similarly to previous commit, in case the user verifier connection is
+closed we should just clear the user verifier instance, since starting
+from this point is going to be just invalid.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3885>
+---
+ js/gdm/util.js | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 9e24913..5a5df21 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -190,6 +190,10 @@ var ShellUserVerifier = class {
+ 
+     _clearUserVerifier() {
+         if (this._userVerifier) {
++            if (this._userVerifierConnectionClosedId) {
++                this._userVerifier.get_connection().disconnect(this._userVerifierConnectionClosedId);
++                this._userVerifierConnectionClosedId = 0;
++            }
+             this._userVerifier.run_dispose();
+             this._userVerifier = null;
+             if (this._userVerifierChoiceList) {
+@@ -370,6 +374,9 @@ var ShellUserVerifier = class {
+             return;
+         }
+ 
++        this._userVerifierConnectionClosedId =
++            this._userVerifier.get_connection().connect('closed', () => this.clear());
++
+         if (client.get_user_verifier_choice_list)
+             this._userVerifierChoiceList = client.get_user_verifier_choice_list();
+         else
+@@ -392,6 +399,9 @@ var ShellUserVerifier = class {
+             return;
+         }
+ 
++        this._userVerifierConnectionClosedId =
++            this._userVerifier.get_connection().connect('closed', () => this.clear());
++
+         if (client.get_user_verifier_choice_list)
+             this._userVerifierChoiceList = client.get_user_verifier_choice_list();
+         else
+-- 
+2.54.0
+
+
+From 87cef60e36c5ca402364f5cc99fb6ce834cf4827 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Wed, 17 Jun 2026 10:06:32 +0200
+Subject: [PATCH 4/5] gdm/util: Do not run dispose on user verifier
+
+This is not a good habit anywhere and especially in JS code, I assume
+the rationale for this was to ensure that cached instances of the proxy
+were cleared, but this did not work properly (as it happened on
+finalize), and it would still require [1].
+
+So let's just avoid this and assume that the getters just return what we
+expect.
+
+[1] https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/321
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/3885>
+---
+ js/gdm/util.js | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 5a5df21..58b5946 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -194,12 +194,8 @@ var ShellUserVerifier = class {
+                 this._userVerifier.get_connection().disconnect(this._userVerifierConnectionClosedId);
+                 this._userVerifierConnectionClosedId = 0;
+             }
+-            this._userVerifier.run_dispose();
+             this._userVerifier = null;
+-            if (this._userVerifierChoiceList) {
+-                this._userVerifierChoiceList.run_dispose();
+-                this._userVerifierChoiceList = null;
+-            }
++            this._userVerifierChoiceList = null;
+         }
+     }
+ 
+-- 
+2.54.0
+
+From 6b1fe48ea3b4dedae9344941e97f48a9a046c0a7 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Wed, 17 Jun 2026 17:32:52 +0200
+Subject: [PATCH 5/5] gdm: Clear user verifier before starting new async operations
+ in begin()
+
+Move _clearUserVerifier() from the finish callbacks
+(_reauthenticationChannelOpened, _userVerifierGot) to the start of
+begin().
+
+When a reauthentication retry happens, begin() creates a new
+cancellable and starts an async open_reauthentication_channel call.
+If the previous user verifier's connection 'closed' handler is still
+active, it can fire during the async operation and call this.clear(),
+which cancels the new cancellable. This causes the retry to fail with
+G_IO_ERROR_CANCELLED.
+
+By clearing the user verifier at the start of begin(), the old
+connection's 'closed' handler is disconnected before the new
+cancellable is created, eliminating the window where closing the old
+connection can cancel the new operation.
+---
+ js/gdm/util.js | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index 58b5946..c86e638 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -161,6 +161,7 @@ var ShellUserVerifier = class {
+     }
+ 
+     begin(userName, hold) {
++        this._clearUserVerifier();
+         this._cancellable = new Gio.Cancellable();
+         this._hold = hold;
+         this._userName = userName;
+@@ -351,7 +352,6 @@ var ShellUserVerifier = class {
+ 
+     _reauthenticationChannelOpened(client, result) {
+         try {
+-            this._clearUserVerifier();
+             this._userVerifier = client.open_reauthentication_channel_finish(result);
+         } catch(e) {
+             if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+@@ -386,7 +386,6 @@ var ShellUserVerifier = class {
+ 
+     _userVerifierGot(client, result) {
+         try {
+-            this._clearUserVerifier();
+             this._userVerifier = client.get_user_verifier_finish(result);
+         } catch(e) {
+             if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+-- 
+2.54.0
+
