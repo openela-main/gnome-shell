@@ -1,7 +1,7 @@
 From 1b3edde30bac1bb4944b56e59cbc7f1412a90a3d Mon Sep 17 00:00:00 2001
 From: Joan Torres Lopez <joantolo@redhat.com>
 Date: Wed, 17 Jun 2026 09:54:57 +0200
-Subject: [PATCH 1/5] loginDialog: Don't reconnect on each reset with gdmClient
+Subject: [PATCH 1/6] loginDialog: Don't reconnect on each reset with gdmClient
 
 When resetting the greeter proxy, it's destroyed and then recreated
 again.
@@ -60,7 +60,7 @@ index eb6846d..c5e8853 100644
 From fb0f4366393fef39e13a2b233c57900db6661198 Mon Sep 17 00:00:00 2001
 From: Joan Torres Lopez <joantolo@redhat.com>
 Date: Wed, 17 Jun 2026 09:56:25 +0200
-Subject: [PATCH 2/5] gdm/loginDialog: Reset the greeter proxy on connection
+Subject: [PATCH 2/6] gdm/loginDialog: Reset the greeter proxy on connection
  closed
 
 If gdm fails to start the display session the greeter proxy we are using
@@ -120,7 +120,7 @@ index c5e8853..613b97e 100644
 From be05549008e57ac8f73211abf43e183eeb661292 Mon Sep 17 00:00:00 2001
 From: Joan Torres Lopez <joantolo@redhat.com>
 Date: Wed, 17 Jun 2026 10:03:00 +0200
-Subject: [PATCH 3/5] gdm/util: Clear the request if user verifier connection
+Subject: [PATCH 3/6] gdm/util: Clear the request if user verifier connection
  is closed
 
 Similarly to previous commit, in case the user verifier connection is
@@ -174,7 +174,7 @@ index 9e24913..5a5df21 100644
 From 87cef60e36c5ca402364f5cc99fb6ce834cf4827 Mon Sep 17 00:00:00 2001
 From: Joan Torres Lopez <joantolo@redhat.com>
 Date: Wed, 17 Jun 2026 10:06:32 +0200
-Subject: [PATCH 4/5] gdm/util: Do not run dispose on user verifier
+Subject: [PATCH 4/6] gdm/util: Do not run dispose on user verifier
 
 This is not a good habit anywhere and especially in JS code, I assume
 the rationale for this was to ensure that cached instances of the proxy
@@ -215,7 +215,7 @@ index 5a5df21..58b5946 100644
 From 6b1fe48ea3b4dedae9344941e97f48a9a046c0a7 Mon Sep 17 00:00:00 2001
 From: Joan Torres Lopez <joantolo@redhat.com>
 Date: Wed, 17 Jun 2026 17:32:52 +0200
-Subject: [PATCH 5/5] gdm: Clear user verifier before starting new async operations
+Subject: [PATCH 5/6] gdm: Clear user verifier before starting new async operations
  in begin()
 
 Move _clearUserVerifier() from the finish callbacks
@@ -267,4 +267,76 @@ index 58b5946..c86e638 100644
              if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
 -- 
 2.54.0
+
+From aaca6779613330a5566e12128251ba34f00f3de4 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Wed, 17 Jun 2026 17:32:52 +0200
+Subject: [PATCH 6/6] gdm/util: Properly clear userVerifier signals
+
+When getting a new userVerifier we must ensure previous signals are
+removed. This ensures that we don't get duplicate signal handlers when
+libgdm returns the same cached proxy.
+---
+ js/gdm/util.js | 29 +++++++++++++++++++++--------
+ 1 file changed, 21 insertions(+), 8 deletions(-)
+
+diff --git a/js/gdm/util.js b/js/gdm/util.js
+index c86e638..86d5a34 100644
+--- a/js/gdm/util.js
++++ b/js/gdm/util.js
+@@ -151,6 +151,8 @@ var ShellUserVerifier = class {
+ 
+         this._failCounter = 0;
+ 
++        this._userVerifierSignals = [];
++
+         this._oVirtCredentialsManager = OVirt.getOVirtCredentialsManager();
+ 
+         if (this._oVirtCredentialsManager.hasToken())
+@@ -195,6 +197,14 @@ var ShellUserVerifier = class {
+                 this._userVerifier.get_connection().disconnect(this._userVerifierConnectionClosedId);
+                 this._userVerifierConnectionClosedId = 0;
+             }
++
++            this._userVerifierSignals.forEach(id => this._userVerifier.disconnect(id));
++            this._userVerifierSignals = [];
++
++            if (this._userVerifierChoiceList && this._userVerifierChoiceListSignalId) {
++                this._userVerifierChoiceList.disconnect(this._userVerifierChoiceListSignalId);
++                this._userVerifierChoiceListSignalId = 0;
++            }
+             this._userVerifier = null;
+             this._userVerifierChoiceList = null;
+         }
+@@ -408,16 +418,19 @@ var ShellUserVerifier = class {
+     }
+ 
+     _connectSignals() {
+-        this._userVerifier.connect('info', this._onInfo.bind(this));
+-        this._userVerifier.connect('problem', this._onProblem.bind(this));
+-        this._userVerifier.connect('info-query', this._onInfoQuery.bind(this));
+-        this._userVerifier.connect('secret-info-query', this._onSecretInfoQuery.bind(this));
+-        this._userVerifier.connect('conversation-stopped', this._onConversationStopped.bind(this));
+-        this._userVerifier.connect('reset', this._onReset.bind(this));
+-        this._userVerifier.connect('verification-complete', this._onVerificationComplete.bind(this));
++        this._userVerifierSignals = [
++            this._userVerifier.connect('info', this._onInfo.bind(this)),
++            this._userVerifier.connect('problem', this._onProblem.bind(this)),
++            this._userVerifier.connect('info-query', this._onInfoQuery.bind(this)),
++            this._userVerifier.connect('secret-info-query', this._onSecretInfoQuery.bind(this)),
++            this._userVerifier.connect('conversation-stopped', this._onConversationStopped.bind(this)),
++            this._userVerifier.connect('reset', this._onReset.bind(this)),
++            this._userVerifier.connect('verification-complete', this._onVerificationComplete.bind(this)),
++        ];
+ 
+         if (this._userVerifierChoiceList)
+-            this._userVerifierChoiceList.connect('choice-query', this._onChoiceListQuery.bind(this));
++            this._userVerifierChoiceListSignalId =
++                this._userVerifierChoiceList.connect('choice-query', this._onChoiceListQuery.bind(this));
+     }
+ 
+     _getForegroundService() {
+-- 
+2.55.0
+
 

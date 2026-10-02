@@ -14,12 +14,12 @@ https://bugzilla.gnome.org/show_bug.cgi?id=701212
  1 file changed, 6 insertions(+)
 
 diff --git a/js/ui/main.js b/js/ui/main.js
-index 8d1755cf1..abf8a8765 100644
+index ca8cd24..dfd12ab 100644
 --- a/js/ui/main.js
 +++ b/js/ui/main.js
 @@ -237,6 +237,12 @@ function _initializeUI() {
-                                         ['MESSAGE_ID=' + GNOMESHELL_STARTED_MESSAGE_ID]);
-         }
+ 
+         LoginManager.registerSessionWithGDM();
  
 +        let credentials = new Gio.Credentials();
 +        if (credentials.get_unix_user() === 0) {

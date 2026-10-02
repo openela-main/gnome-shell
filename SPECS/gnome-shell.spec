@@ -6,7 +6,7 @@
 
 Name:           gnome-shell
 Version:        3.32.2
-Release:        60%{?dist}
+Release:        61%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -41,6 +41,7 @@ Patch2016: 0003-shellEntry-Handle-password-item-from-dedication-func.patch
 Patch2017: 0004-shellEntry-Support-lockdown-of-Show-Text-menu-in-pas.patch
 Patch2018: 0005-shellEntry-Only-mask-text-in-password-entries.patch
 Patch2019: 0001-gdm-loginDialog-Reset-the-greeter-proxy-on-connectio.patch
+Patch2020: 0001-main-LoginManager-Call-GDM-s-RegisterSession.patch
 
 # Misc.
 Patch3001: 0001-shellDBus-Add-a-DBus-method-to-load-a-single-extensi.patch
@@ -307,6 +308,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Tue Sep 8 2026 Joan Torres Lopez <joantolo@redhat.com> - 3.32.2-61
+- Fix regression from last change recovering userVerifier
+  Resolves: RHEL-225141
+
 * Wed Jun 17 2026 Joan Torres Lopez <joantolo@redhat.com> - 3.32.2-60
 - Backport fix to recover userVerifier
   Resolves: RHEL-185731

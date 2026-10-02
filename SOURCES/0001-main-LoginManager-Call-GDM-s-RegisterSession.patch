@@ -1,0 +1,63 @@
+From 0e37cd2ec92c5fbbc0870272e5e00fc07a705eba Mon Sep 17 00:00:00 2001
+From: Iain Lane <iainl@gnome.org>
+Date: Thu, 2 May 2019 10:49:12 +0100
+Subject: [PATCH] main, LoginManager: Call GDM's RegisterSession()
+
+So that it can know if we started up properly and use that to (e.g.)
+kill its greeter.
+
+https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/570
+---
+ js/misc/loginManager.js | 22 ++++++++++++++++++++++
+ js/ui/main.js           |  2 ++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/js/misc/loginManager.js b/js/misc/loginManager.js
+index f615b4f..4f4cc83 100644
+--- a/js/misc/loginManager.js
++++ b/js/misc/loginManager.js
+@@ -48,6 +48,28 @@ function canLock() {
+     }
+ }
+ 
++
++function registerSessionWithGDM() {
++    log("Registering session with GDM");
++    Gio.DBus.system.call('org.gnome.DisplayManager',
++                         '/org/gnome/DisplayManager/Manager',
++                         'org.gnome.DisplayManager.Manager',
++                         'RegisterSession',
++                         GLib.Variant.new('(a{sv})', [{}]), null,
++                         Gio.DBusCallFlags.NONE, -1, null,
++        (source, result) => {
++            try {
++                source.call_finish(result);
++            } catch (e) {
++                if (!e.matches(Gio.DBusError, Gio.DBusError.UNKNOWN_METHOD))
++                    log(`Error registering session with GDM: ${e.message}`);
++                else
++                    log("Not calling RegisterSession(): method not exported, GDM too old?");
++            }
++        }
++    );
++}
++
+ let _loginManager = null;
+ 
+ /**
+diff --git a/js/ui/main.js b/js/ui/main.js
+index 061303c..530c820 100644
+--- a/js/ui/main.js
++++ b/js/ui/main.js
+@@ -233,6 +233,8 @@ function _initializeUI() {
+                                         ['MESSAGE_ID=' + GNOMESHELL_STARTED_MESSAGE_ID]);
+         }
+ 
++        LoginManager.registerSessionWithGDM();
++
+         let perfModuleName = GLib.getenv("SHELL_PERF_MODULE");
+         if (perfModuleName) {
+             let perfOutput = GLib.getenv("SHELL_PERF_OUTPUT");
+-- 
+2.55.0
+
