@@ -6,7 +6,7 @@
 
 Name:           gnome-shell
 Version:        3.32.2
-Release:        61%{?dist}
+Release:        62%{?dist}
 Summary:        Window management and application launching for GNOME
 
 Group:          User Interface/Desktops
@@ -308,6 +308,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Mon Sep 21 2026 Joan Torres Lopez <joantolo@redhat.com> - 3.32.2-62
+- Ensure userVerifier handlers don't leak
+  Resolves: RHEL-265451
+  Related: RHEL-225141
+
 * Tue Sep 8 2026 Joan Torres Lopez <joantolo@redhat.com> - 3.32.2-61
 - Fix regression from last change recovering userVerifier
   Resolves: RHEL-225141
