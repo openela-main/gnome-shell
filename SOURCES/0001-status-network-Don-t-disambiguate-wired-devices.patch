@@ -1,0 +1,45 @@
+From cb7e6319a93211aeb3ad821d5efa2e2aee1e4d2c Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@gnome.org>
+Date: Wed, 6 May 2026 21:29:20 +0200
+Subject: [PATCH] status/network: Don't disambiguate wired devices
+
+Upstream disambiguates names to get user-friendlier strings if
+possible (like simply "Wired" in the typical one-device case).
+
+In more technical environments however, it is more appropriate
+to use consistent identifiers between GUI and CLI, so present
+ethernet devices as "Ethernet ($IFACE)".
+
+https://redhat.atlassian.net/browse/RHEL-173695
+---
+ js/ui/status/network.js | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/js/ui/status/network.js b/js/ui/status/network.js
+index 6cf195d417..c107df091b 100644
+--- a/js/ui/status/network.js
++++ b/js/ui/status/network.js
+@@ -1913,6 +1913,20 @@ class NMWiredToggle extends NMDeviceToggle {
+     _createDeviceMenuItem(device) {
+         return new NMWiredDeviceItem(this._client, device);
+     }
++
++    _syncDeviceNames() {
++        const devices = [...this._nmDevices];
++        const names = NM.Device.disambiguate_names(devices);
++        this._deviceNames.clear();
++        devices.forEach(
++            (dev, i) => {
++                const iface = dev.get_iface();
++                const name = iface ? `${_('Ethernet')} (${iface})` : names[i];
++
++                this._deviceNames.set(dev, name);
++                this._items.get(dev)?.setDeviceName(name);
++            });
++    }
+ });
+ 
+ const NMBluetoothToggle = GObject.registerClass(
+-- 
+2.54.0
+

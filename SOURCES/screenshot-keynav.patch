@@ -1,0 +1,737 @@
+From b8a149237d13e420ec1c0fc7c63213e9d443c37c Mon Sep 17 00:00:00 2001
+From: Zoey Ahmed <zoeyahmed10@proton.me>
+Date: Sat, 20 Dec 2025 19:27:41 +0000
+Subject: [PATCH 1/7] screenshot: Introduce keyboard navigation to resize
+ selection
+
+Similar to resizing windows using the arrow keys in shell, this lets the
+user change the size of the selection rectangle in the screenshot
+overlay, using arrow keys, by controlling the direction in a single
+plane, anchored around at the last changed side, changing the side
+when an arrow key of a different corresponding key is pressed.
+
+Closes: https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/8729
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4013>
+---
+ js/ui/screenshot.js | 117 +++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 105 insertions(+), 12 deletions(-)
+
+diff --git a/js/ui/screenshot.js b/js/ui/screenshot.js
+index fd510788a7..e11f4d2a13 100644
+--- a/js/ui/screenshot.js
++++ b/js/ui/screenshot.js
+@@ -251,6 +251,8 @@ class UIAreaIndicator extends St.Widget {
+     }
+ });
+ 
++const SELECTION_KEYBOARD_INCREMENT = 5;
++
+ const UIAreaSelector = GObject.registerClass({
+     Signals: {'drag-started': {}, 'drag-ended': {}},
+ }, class UIAreaSelector extends St.Widget {
+@@ -306,6 +308,9 @@ const UIAreaSelector = GObject.registerClass({
+         this.stopDrag();
+         global.display.set_cursor(Meta.Cursor.DEFAULT);
+ 
++        this._currentSide = St.DirectionType.LEFT;
++        this._lastResizeDirection = St.DirectionType.LEFT;
++
+         // Preserve area selection if possible. If the area goes out of bounds,
+         // the monitors might have changed, so reset the area.
+         const [x, y, w, h] = this.getGeometry();
+@@ -332,6 +337,85 @@ const UIAreaSelector = GObject.registerClass({
+         }
+     }
+ 
++    _maybeChangeResizeDirection(direction) {
++        function isVertical(dir) {
++            return dir === St.DirectionType.UP || dir === St.DirectionType.DOWN;
++        }
++
++        if (isVertical(direction) && isVertical(this._lastResizeDirection))
++            return false;
++
++        if (!isVertical(direction) && !isVertical(this._lastResizeDirection))
++            return false;
++
++        this._lastResizeDirection = direction;
++        this._currentSide = direction;
++        return true;
++    }
++
++    resizeInDirection(direction) {
++        let newStartX = this._startX;
++        let newStartY = this._startY;
++        let newLastX = this._lastX;
++        let newLastY = this._lastY;
++
++        // Only move the current side of the area selected in the corresponding
++        // direction to the key just pressed if the pressed key is on the same axis,
++        // otherwise exit early.
++        if (this._maybeChangeResizeDirection(direction))
++            return;
++
++        switch (direction) {
++        case St.DirectionType.LEFT:
++            if (this._currentSide === St.DirectionType.LEFT)
++                newStartX -= SELECTION_KEYBOARD_INCREMENT;
++            else if (this._currentSide === St.DirectionType.RIGHT)
++                newLastX -= SELECTION_KEYBOARD_INCREMENT;
++            break;
++
++        case St.DirectionType.RIGHT:
++            if (this._currentSide === St.DirectionType.LEFT)
++                newStartX += SELECTION_KEYBOARD_INCREMENT;
++            else if (this._currentSide === St.DirectionType.RIGHT)
++                newLastX += SELECTION_KEYBOARD_INCREMENT;
++            break;
++
++        case St.DirectionType.UP:
++            if (this._currentSide === St.DirectionType.UP)
++                newStartY -= SELECTION_KEYBOARD_INCREMENT;
++            else if (this._currentSide === St.DirectionType.DOWN)
++                newLastY -= SELECTION_KEYBOARD_INCREMENT;
++            break;
++
++        case St.DirectionType.DOWN:
++            if (this._currentSide === St.DirectionType.UP)
++                newStartY += SELECTION_KEYBOARD_INCREMENT;
++            else if (this._currentSide === St.DirectionType.DOWN)
++                newLastY += SELECTION_KEYBOARD_INCREMENT;
++            break;
++        }
++
++        // Ensure new resized area does not go off the stage edge.
++        if (newStartX < 0)
++            newStartX = 0;
++        else if (newLastX > this.width - 1)
++            newLastX = this.width - 1;
++
++        if (newStartY < 0)
++            newStartY = 0;
++        else if (newLastY > this.height - 1)
++            newLastY = this.height - 1;
++
++        // Update selection rectangle props.
++        this._startX = newStartX;
++        this._startY = newStartY;
++        this._lastX = newLastX;
++        this._lastY = newLastY;
++        this._lastResizeDirection = direction;
++
++        this._updateSelectionRect();
++    }
++
+     getGeometry() {
+         const leftX = Math.min(this._startX, this._lastX);
+         const topY = Math.min(this._startY, this._lastY);
+@@ -2153,13 +2237,32 @@ export const ScreenshotUI = GObject.registerClass({
+         this.notify('screencast-in-progress');
+     }
+ 
++    _activate() {
++        this._onCaptureButtonClicked().catch(logError);
++    }
++
++    _moveFocus(direction) {
++        if (this._windowButton.checked) {
++            const window =
++                  this._windowSelectors.flatMap(selector => selector.windows())
++                  .find(win => win.checked) ?? null;
++            this.navigate_focus(window, direction, false);
++        } else if (this._screenButton.checked) {
++            const screen =
++                  this._screenSelectors.find(selector => selector.checked) ?? null;
++            this.navigate_focus(screen, direction, false);
++        } else if (this._selectionButton.checked) {
++            this._areaSelector.resizeInDirection(direction);
++        }
++    }
++
+     vfunc_key_press_event(event) {
+         const symbol = event.get_key_symbol();
+         if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_space ||
+             symbol === Clutter.KEY_KP_Enter || symbol === Clutter.KEY_ISO_Enter ||
+             ((event.get_state() & Clutter.ModifierType.CONTROL_MASK) &&
+              (symbol === Clutter.KEY_c || symbol === Clutter.KEY_C))) {
+-            this._onCaptureButtonClicked().catch(logError);
++            this._activate();
+             return Clutter.EVENT_STOP;
+         }
+ 
+@@ -2202,17 +2305,7 @@ export const ScreenshotUI = GObject.registerClass({
+             else if (symbol === Clutter.KEY_Down)
+                 direction = St.DirectionType.DOWN;
+ 
+-            if (this._windowButton.checked) {
+-                const window =
+-                    this._windowSelectors.flatMap(selector => selector.windows())
+-                        .find(win => win.checked) ?? null;
+-                this.navigate_focus(window, direction, false);
+-            } else if (this._screenButton.checked) {
+-                const screen =
+-                    this._screenSelectors.find(selector => selector.checked) ?? null;
+-                this.navigate_focus(screen, direction, false);
+-            }
+-
++            this._moveFocus(direction);
+             return Clutter.EVENT_STOP;
+         }
+ 
+-- 
+2.55.0
+
+
+From 891fef2369913b1bce145affeb24f4201422f534 Mon Sep 17 00:00:00 2001
+From: Zoey Ahmed <zoeyahmed10@proton.me>
+Date: Sat, 20 Dec 2025 19:44:44 +0000
+Subject: [PATCH 2/7] screenshot: Reset selection area on "R" key pressed
+
+Similar to other screenshot shortcuts, on selection mode, reset the area
+of the rectangle back to the center of screen when "R" key is pressed.
+This makes keyboard navigation of the selection mode easier.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4013>
+---
+ js/ui/screenshot.js | 33 +++++++++++++++++++++------------
+ 1 file changed, 21 insertions(+), 12 deletions(-)
+
+diff --git a/js/ui/screenshot.js b/js/ui/screenshot.js
+index e11f4d2a13..106fef8cf8 100644
+--- a/js/ui/screenshot.js
++++ b/js/ui/screenshot.js
+@@ -322,18 +322,7 @@ const UIAreaSelector = GObject.registerClass({
+             this._lastX = 0;
+             this._lastY = 0;
+ 
+-            // This can happen when running headless without any monitors.
+-            if (Main.layoutManager.primaryIndex !== -1) {
+-                const monitor =
+-                    Main.layoutManager.monitors[Main.layoutManager.primaryIndex];
+-
+-                this._startX = monitor.x + Math.floor(monitor.width * 3 / 8);
+-                this._startY = monitor.y + Math.floor(monitor.height * 3 / 8);
+-                this._lastX = monitor.x + Math.floor(monitor.width * 5 / 8) - 1;
+-                this._lastY = monitor.y + Math.floor(monitor.height * 5 / 8) - 1;
+-            }
+-
+-            this._updateSelectionRect();
++            this.resetArea();
+         }
+     }
+ 
+@@ -353,6 +342,21 @@ const UIAreaSelector = GObject.registerClass({
+         return true;
+     }
+ 
++    resetArea() {
++        // This can called when running headless without any monitors.
++        if (Main.layoutManager.primaryIndex !== -1) {
++            const monitor =
++                Main.layoutManager.monitors[Main.layoutManager.primaryIndex];
++
++            this._startX = monitor.x + Math.floor(monitor.width * 3 / 8);
++            this._startY = monitor.y + Math.floor(monitor.height * 3 / 8);
++            this._lastX = monitor.x + Math.floor(monitor.width * 5 / 8) - 1;
++            this._lastY = monitor.y + Math.floor(monitor.height * 5 / 8) - 1;
++        }
++
++        this._updateSelectionRect();
++    }
++
+     resizeInDirection(direction) {
+         let newStartX = this._startX;
+         let newStartY = this._startY;
+@@ -2309,6 +2313,11 @@ export const ScreenshotUI = GObject.registerClass({
+             return Clutter.EVENT_STOP;
+         }
+ 
++        if (symbol === Clutter.KEY_r || symbol === Clutter.KEY_R) {
++            this._areaSelector.resetArea();
++            return Clutter.EVENT_STOP;
++        }
++
+         return super.vfunc_key_press_event(event);
+     }
+ });
+-- 
+2.55.0
+
+
+From 92d7757bf85da872ce6ec18252fa539c0ef24e49 Mon Sep 17 00:00:00 2001
+From: Zoey Ahmed <zoeyahmed10@proton.me>
+Date: Tue, 20 Jan 2026 00:38:51 +0000
+Subject: [PATCH 3/7] screenshot: Cap all X/Y values to be in bounds
+
+This ensures that that selection area does not go out of bounds while
+using arrow keys to resize, when the selection rubber bands over itself
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4013>
+---
+ js/ui/screenshot.js | 14 +++++---------
+ 1 file changed, 5 insertions(+), 9 deletions(-)
+
+diff --git a/js/ui/screenshot.js b/js/ui/screenshot.js
+index 106fef8cf8..a5b7012529 100644
+--- a/js/ui/screenshot.js
++++ b/js/ui/screenshot.js
+@@ -400,15 +400,11 @@ const UIAreaSelector = GObject.registerClass({
+         }
+ 
+         // Ensure new resized area does not go off the stage edge.
+-        if (newStartX < 0)
+-            newStartX = 0;
+-        else if (newLastX > this.width - 1)
+-            newLastX = this.width - 1;
+-
+-        if (newStartY < 0)
+-            newStartY = 0;
+-        else if (newLastY > this.height - 1)
+-            newLastY = this.height - 1;
++        newStartX = Math.clamp(newStartX, 0, this.width - 1);
++        newLastX = Math.clamp(newLastX, 0, this.width - 1);
++
++        newStartY = Math.clamp(newStartY, 0, this.height - 1);
++        newLastY = Math.clamp(newLastY, 0, this.height - 1);
+ 
+         // Update selection rectangle props.
+         this._startX = newStartX;
+-- 
+2.55.0
+
+
+From 47707f00bd497c454dc4923d2e544973e1385778 Mon Sep 17 00:00:00 2001
+From: Zoey Ahmed <zoeyahmed10@proton.me>
+Date: Tue, 20 Jan 2026 01:43:18 +0000
+Subject: [PATCH 4/7] screenshot: Introduce keyboard navigation to move
+ selection
+
+Area is moved when the first modifier key (left alt in most cases) is
+pressed alongside the arrow keys. The area moves directly in the arrow
+direction pressed, and does not consider the previous directions,
+copying the behavior of moving windows in Gnome-Shell using the
+arrow keys
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4013>
+---
+ js/ui/screenshot.js | 59 ++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 58 insertions(+), 1 deletion(-)
+
+diff --git a/js/ui/screenshot.js b/js/ui/screenshot.js
+index a5b7012529..a46573f745 100644
+--- a/js/ui/screenshot.js
++++ b/js/ui/screenshot.js
+@@ -357,6 +357,59 @@ const UIAreaSelector = GObject.registerClass({
+         this._updateSelectionRect();
+     }
+ 
++    moveInDirection(direction) {
++        const [,, selectionWidth, selectionHeight] = this.getGeometry();
++
++        let newStartX = this._startX;
++        let newStartY = this._startY;
++        let newLastX = this._lastX;
++        let newLastY = this._lastY;
++
++        switch (direction) {
++        case St.DirectionType.LEFT:
++            newStartX -= SELECTION_KEYBOARD_INCREMENT;
++            newLastX -= SELECTION_KEYBOARD_INCREMENT;
++            break;
++        case St.DirectionType.RIGHT:
++            newStartX += SELECTION_KEYBOARD_INCREMENT;
++            newLastX += SELECTION_KEYBOARD_INCREMENT;
++            break;
++        case St.DirectionType.UP:
++            newStartY -= SELECTION_KEYBOARD_INCREMENT;
++            newLastY -= SELECTION_KEYBOARD_INCREMENT;
++            break;
++        case St.DirectionType.DOWN:
++            newStartY += SELECTION_KEYBOARD_INCREMENT;
++            newLastY += SELECTION_KEYBOARD_INCREMENT;
++            break;
++        }
++
++        // Ensure area does not move off the stage edge.
++        if (newStartX < 0 || newLastX < 0) {
++            newStartX = 0;
++            newLastX = newStartX + (selectionWidth - 1);
++        } else if (newLastX > this.width - 1) {
++            newLastX = this.width - 1;
++            newStartX = newLastX - (selectionWidth - 1);
++        }
++
++        if (newStartY < 0 || newLastY < 0) {
++            newStartY = 0;
++            newLastY = newStartY + (selectionHeight - 1);
++        } else if (newLastY > this.height - 1) {
++            newLastY = this.height - 1;
++            newStartY = newLastY - (selectionHeight - 1);
++        }
++
++        // Update selection rectangle props.
++        this._startX = newStartX;
++        this._startY = newStartY;
++        this._lastX = newLastX;
++        this._lastY = newLastY;
++
++        this._updateSelectionRect();
++    }
++
+     resizeInDirection(direction) {
+         let newStartX = this._startX;
+         let newStartY = this._startY;
+@@ -2305,7 +2358,11 @@ export const ScreenshotUI = GObject.registerClass({
+             else if (symbol === Clutter.KEY_Down)
+                 direction = St.DirectionType.DOWN;
+ 
+-            this._moveFocus(direction);
++            const modifiers = event.get_state();
++            if (modifiers & Clutter.ModifierType.MOD1_MASK)
++                this._areaSelector.moveInDirection(direction);
++            else
++                this._moveFocus(direction);
+             return Clutter.EVENT_STOP;
+         }
+ 
+-- 
+2.55.0
+
+
+From 55edca5d1485b02a6b2bf17b4ba7ddeacd666b32 Mon Sep 17 00:00:00 2001
+From: Zoey Ahmed <zoeyahmed10@proton.me>
+Date: Thu, 29 Jan 2026 13:48:47 +0000
+Subject: [PATCH 5/7] screenshot: Change resize/move increment when Ctrl/Shift
+ pressed
+
+Holding Ctrl will move the box or the current side in the given
+direction by 1 pixel. Holding Shift will cause the box or current side
+to go to the end of the screen in the inputted direction. This is
+consistant with the behaviour of moving/resizing windows in Mutter when
+holding down the Ctrl + Shift keys
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4013>
+---
+ js/ui/screenshot.js | 67 +++++++++++++++++++++++++++++++--------------
+ 1 file changed, 46 insertions(+), 21 deletions(-)
+
+diff --git a/js/ui/screenshot.js b/js/ui/screenshot.js
+index a46573f745..a3aa449342 100644
+--- a/js/ui/screenshot.js
++++ b/js/ui/screenshot.js
+@@ -251,6 +251,7 @@ class UIAreaIndicator extends St.Widget {
+     }
+ });
+ 
++const CTRL_SELECTION_KEYBOARD_INCREMENT = 1;
+ const SELECTION_KEYBOARD_INCREMENT = 5;
+ 
+ const UIAreaSelector = GObject.registerClass({
+@@ -357,7 +358,7 @@ const UIAreaSelector = GObject.registerClass({
+         this._updateSelectionRect();
+     }
+ 
+-    moveInDirection(direction) {
++    moveInDirection(direction, increment) {
+         const [,, selectionWidth, selectionHeight] = this.getGeometry();
+ 
+         let newStartX = this._startX;
+@@ -367,20 +368,20 @@ const UIAreaSelector = GObject.registerClass({
+ 
+         switch (direction) {
+         case St.DirectionType.LEFT:
+-            newStartX -= SELECTION_KEYBOARD_INCREMENT;
+-            newLastX -= SELECTION_KEYBOARD_INCREMENT;
++            newStartX -= increment;
++            newLastX -= increment;
+             break;
+         case St.DirectionType.RIGHT:
+-            newStartX += SELECTION_KEYBOARD_INCREMENT;
+-            newLastX += SELECTION_KEYBOARD_INCREMENT;
++            newStartX += increment;
++            newLastX += increment;
+             break;
+         case St.DirectionType.UP:
+-            newStartY -= SELECTION_KEYBOARD_INCREMENT;
+-            newLastY -= SELECTION_KEYBOARD_INCREMENT;
++            newStartY -= increment;
++            newLastY -= increment;
+             break;
+         case St.DirectionType.DOWN:
+-            newStartY += SELECTION_KEYBOARD_INCREMENT;
+-            newLastY += SELECTION_KEYBOARD_INCREMENT;
++            newStartY += increment;
++            newLastY += increment;
+             break;
+         }
+ 
+@@ -410,7 +411,7 @@ const UIAreaSelector = GObject.registerClass({
+         this._updateSelectionRect();
+     }
+ 
+-    resizeInDirection(direction) {
++    resizeInDirection(direction, increment) {
+         let newStartX = this._startX;
+         let newStartY = this._startY;
+         let newLastX = this._lastX;
+@@ -425,30 +426,30 @@ const UIAreaSelector = GObject.registerClass({
+         switch (direction) {
+         case St.DirectionType.LEFT:
+             if (this._currentSide === St.DirectionType.LEFT)
+-                newStartX -= SELECTION_KEYBOARD_INCREMENT;
++                newStartX -= increment;
+             else if (this._currentSide === St.DirectionType.RIGHT)
+-                newLastX -= SELECTION_KEYBOARD_INCREMENT;
++                newLastX -= increment;
+             break;
+ 
+         case St.DirectionType.RIGHT:
+             if (this._currentSide === St.DirectionType.LEFT)
+-                newStartX += SELECTION_KEYBOARD_INCREMENT;
++                newStartX += increment;
+             else if (this._currentSide === St.DirectionType.RIGHT)
+-                newLastX += SELECTION_KEYBOARD_INCREMENT;
++                newLastX += increment;
+             break;
+ 
+         case St.DirectionType.UP:
+             if (this._currentSide === St.DirectionType.UP)
+-                newStartY -= SELECTION_KEYBOARD_INCREMENT;
++                newStartY -= increment;
+             else if (this._currentSide === St.DirectionType.DOWN)
+-                newLastY -= SELECTION_KEYBOARD_INCREMENT;
++                newLastY -= increment;
+             break;
+ 
+         case St.DirectionType.DOWN:
+             if (this._currentSide === St.DirectionType.UP)
+-                newStartY += SELECTION_KEYBOARD_INCREMENT;
++                newStartY += increment;
+             else if (this._currentSide === St.DirectionType.DOWN)
+-                newLastY += SELECTION_KEYBOARD_INCREMENT;
++                newLastY += increment;
+             break;
+         }
+ 
+@@ -2294,6 +2295,28 @@ export const ScreenshotUI = GObject.registerClass({
+         this._onCaptureButtonClicked().catch(logError);
+     }
+ 
++    _getIncrement(direction, modifier) {
++        let increment;
++
++        if (modifier & Clutter.ModifierType.CONTROL_MASK) {
++            increment = CTRL_SELECTION_KEYBOARD_INCREMENT;
++        } else if (modifier & Clutter.ModifierType.SHIFT_MASK) {
++            if (direction === St.DirectionType.LEFT || direction === St.DirectionType.RIGHT)
++                increment = Main.layoutManager.primaryMonitor.width;
++            else if (direction === St.DirectionType.DOWN || direction === St.DirectionType.UP)
++                increment = Main.layoutManager.primaryMonitor.height;
++        } else {
++            increment = SELECTION_KEYBOARD_INCREMENT;
++        }
++
++        return increment;
++    }
++
++    _resizeSelection(direction, modifier) {
++        if (this._selectionButton.checked)
++            this._areaSelector.resizeInDirection(direction, this._getIncrement(direction, modifier));
++    }
++
+     _moveFocus(direction) {
+         if (this._windowButton.checked) {
+             const window =
+@@ -2304,8 +2327,8 @@ export const ScreenshotUI = GObject.registerClass({
+             const screen =
+                   this._screenSelectors.find(selector => selector.checked) ?? null;
+             this.navigate_focus(screen, direction, false);
+-        } else if (this._selectionButton.checked) {
+-            this._areaSelector.resizeInDirection(direction);
++        } else {
++            this._resizeSelection(direction, null);
+         }
+     }
+ 
+@@ -2360,7 +2383,9 @@ export const ScreenshotUI = GObject.registerClass({
+ 
+             const modifiers = event.get_state();
+             if (modifiers & Clutter.ModifierType.MOD1_MASK)
+-                this._areaSelector.moveInDirection(direction);
++                this._areaSelector.moveInDirection(direction, this._getIncrement(direction, modifiers));
++            else if (modifiers !== 0)
++                this._resizeSelection(direction, modifiers);
+             else
+                 this._moveFocus(direction);
+             return Clutter.EVENT_STOP;
+-- 
+2.55.0
+
+
+From ad940d4b0650da4c347418589d488f8562eb9345 Mon Sep 17 00:00:00 2001
+From: Zoey Ahmed <zoeyahmed10@proton.me>
+Date: Fri, 30 Jan 2026 13:40:23 +0000
+Subject: [PATCH 6/7] screenshot: Move cursor when moving/resizing selection
+ using keyboard
+
+Introduce two new methods to move the cursor to either a given side of
+the selection area, or in the center of the selection area, and another
+method to attach the cursor to the new direction when the perpendicular
+direction the user is resizing changes.
+
+`_resizeByArea` also now first checks if the new direction is in the
+opposite perpendicular direction to the previous resize direction. If
+so,the cursor is updated to the new direction, and it leaves early,
+leaving the selection size unchanged.
+
+This makes the behavior of the cursor similar to resizing windows
+via the cursor in GNOME Shell/Mutter
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4013>
+---
+ js/ui/screenshot.js | 58 ++++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 52 insertions(+), 6 deletions(-)
+
+diff --git a/js/ui/screenshot.js b/js/ui/screenshot.js
+index a3aa449342..bf8334922c 100644
+--- a/js/ui/screenshot.js
++++ b/js/ui/screenshot.js
+@@ -358,6 +358,45 @@ const UIAreaSelector = GObject.registerClass({
+         this._updateSelectionRect();
+     }
+ 
++    _centerCursor() {
++        const [leftX, topY, selectionWidth, selectionHeight] = this.getGeometry();
++        const [rightX, bottomY] = [leftX + selectionWidth - 1, topY + selectionHeight - 1];
++        const seat = global.stage.context.get_backend().get_default_seat();
++        const cursorX = ((rightX - leftX) / 2) + leftX;
++        const cursorY = ((topY - bottomY) / 2) + bottomY;
++
++        seat.warp_pointer(cursorX, cursorY);
++        this._updateCursor(cursorX, cursorY);
++    }
++
++    _moveCursorToSide(direction) {
++        const seat = global.stage.context.get_backend().get_default_seat();
++        const [leftX, topY, width, height] = this.getGeometry();
++        const [rightX, bottomY] = [leftX + width - 1, topY + height - 1];
++        let cursorX, cursorY;
++
++        switch (direction) {
++        case St.DirectionType.LEFT:
++            cursorX = leftX;
++            cursorY = ((topY - bottomY) / 2) + bottomY;
++            break;
++        case St.DirectionType.RIGHT:
++            cursorX = rightX;
++            cursorY = ((topY - bottomY) / 2) + bottomY;
++            break;
++        case St.DirectionType.UP:
++            cursorX = ((rightX - leftX) / 2) + leftX;
++            cursorY = topY;
++            break;
++        case St.DirectionType.DOWN:
++            cursorX = ((rightX - leftX) / 2) + leftX;
++            cursorY = bottomY;
++            break;
++        }
++        seat.warp_pointer(cursorX, cursorY);
++        this._updateCursor(cursorX, cursorY);
++    }
++
+     moveInDirection(direction, increment) {
+         const [,, selectionWidth, selectionHeight] = this.getGeometry();
+ 
+@@ -409,20 +448,25 @@ const UIAreaSelector = GObject.registerClass({
+         this._lastY = newLastY;
+ 
+         this._updateSelectionRect();
++
++        // Update cursor to center of the selection rectangle
++        this._centerCursor();
+     }
+ 
+     resizeInDirection(direction, increment) {
++        // Only move the current side of the area selected in the corresponding
++        // direction to the key just pressed if the pressed key is on the same axis,
++        // otherwise change cursor direction and exit early.
++        if (this._maybeChangeResizeDirection(direction)) {
++            this._moveCursorToSide(direction);
++            return;
++        }
++
+         let newStartX = this._startX;
+         let newStartY = this._startY;
+         let newLastX = this._lastX;
+         let newLastY = this._lastY;
+ 
+-        // Only move the current side of the area selected in the corresponding
+-        // direction to the key just pressed if the pressed key is on the same axis,
+-        // otherwise exit early.
+-        if (this._maybeChangeResizeDirection(direction))
+-            return;
+-
+         switch (direction) {
+         case St.DirectionType.LEFT:
+             if (this._currentSide === St.DirectionType.LEFT)
+@@ -468,6 +512,8 @@ const UIAreaSelector = GObject.registerClass({
+         this._lastResizeDirection = direction;
+ 
+         this._updateSelectionRect();
++
++        this._moveCursorToSide(this._currentSide);
+     }
+ 
+     getGeometry() {
+-- 
+2.55.0
+
+
+From 89f0c4337ae4a24378feab3cf58669d68075c81e Mon Sep 17 00:00:00 2001
+From: Zoey Ahmed <zoeyahmed10@proton.me>
+Date: Fri, 13 Mar 2026 16:26:33 +0000
+Subject: [PATCH 7/7] screenshot: Move cursor to wrapped-around side of
+ selection
+
+Wrap cursor to the opposite side if the start position is greater than
+the last position (i.e. if the right side of the selection wraps over
+the left, and becomes the new left side, the cursor moves to that side
+instead of being stuck on the new right side)
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4013>
+---
+ js/ui/screenshot.js | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/js/ui/screenshot.js b/js/ui/screenshot.js
+index bf8334922c..0c97f8cf1d 100644
+--- a/js/ui/screenshot.js
++++ b/js/ui/screenshot.js
+@@ -377,20 +377,20 @@ const UIAreaSelector = GObject.registerClass({
+ 
+         switch (direction) {
+         case St.DirectionType.LEFT:
+-            cursorX = leftX;
++            cursorX = this._startX < this._lastX ? leftX : rightX;
+             cursorY = ((topY - bottomY) / 2) + bottomY;
+             break;
+         case St.DirectionType.RIGHT:
+-            cursorX = rightX;
++            cursorX = this._startX < this._lastX ? rightX : leftX;
+             cursorY = ((topY - bottomY) / 2) + bottomY;
+             break;
+         case St.DirectionType.UP:
+             cursorX = ((rightX - leftX) / 2) + leftX;
+-            cursorY = topY;
++            cursorY = this._startY < this._lastY ? topY : bottomY;
+             break;
+         case St.DirectionType.DOWN:
+             cursorX = ((rightX - leftX) / 2) + leftX;
+-            cursorY = bottomY;
++            cursorY = this._startY < this._lastY ? bottomY : topY;
+             break;
+         }
+         seat.warp_pointer(cursorX, cursorY);
+-- 
+2.55.0
+
