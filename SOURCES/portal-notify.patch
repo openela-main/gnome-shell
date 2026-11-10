@@ -332,7 +332,7 @@ diff --git a/data/icons/meson.build b/data/icons/meson.build
 index eff6e4b530..277df017b2 100644
 --- a/data/icons/meson.build
 +++ b/data/icons/meson.build
-@@ -1 +1,9 @@
+@@ -1,2 +1,11 @@
 -install_subdir('hicolor', install_dir: icondir)
 +excluded_icons=[]
 +if not have_portal_helper
@@ -343,6 +343,8 @@ index eff6e4b530..277df017b2 100644
 +endif
 +install_subdir('hicolor',
 +  install_dir: icondir, exclude_files: excluded_icons)
++
+ install_subdir('scalable', install_dir: icondir)
 diff --git a/data/meson.build b/data/meson.build
 index 4a1e16d467..01cf828310 100644
 --- a/data/meson.build

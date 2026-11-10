@@ -3,106 +3,132 @@ From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@redhat.com>
 Date: Tue, 8 Feb 2022 14:18:04 -0500
 
 ---
- data/theme/gnome-shell-high-contrast.css | 36 ++++++++++++++++++++++++
- data/theme/gnome-shell.css               | 36 ++++++++++++++++++++++++
- 2 files changed, 72 insertions(+)
+ data/theme/gnome-shell-high-contrast.css | 279 ++++++++++++++++++++++-
+ data/theme/gnome-shell.css               | 279 ++++++++++++++++++++++-
+ 2 files changed, 544 insertions(+), 14 deletions(-)
 
 diff --git a/data/theme/gnome-shell-high-contrast.css b/data/theme/gnome-shell-high-contrast.css
-index b73f407..90f363c 100644
+index b73f407..5444be1 100644
 --- a/data/theme/gnome-shell-high-contrast.css
 +++ b/data/theme/gnome-shell-high-contrast.css
-@@ -1223,60 +1223,63 @@ StScrollBar {
-     -panel-corner-border-color: transparent;
-     -panel-corner-opacity: 1;
-     transition-duration: 250ms; }
-   #panel .panel-button {
-     font-weight: bold;
-     color: #ddd;
-     -natural-hpadding: 12px;
-     -minimum-hpadding: 6px;
-     transition-duration: 150ms;
-     border: 3px solid transparent;
-     border-radius: 99px; }
-     #panel .panel-button.clock-display .clock {
-       transition-duration: 150ms;
-       border: 3px solid transparent;
+@@ -173,7 +173,7 @@ StEntry {
+     icon-size: 1.09em;
+     padding: 0 4px; }
+   StEntry StLabel.hint-text {
+-    margin-left: 2px;
++    margin-left: 8px;
+     color: rgba(255, 255, 255, 0.7); }
+ 
+ /* Buttons */
+@@ -1237,9 +1237,9 @@ StScrollBar {
        border-radius: 99px; }
      #panel .panel-button:hover, #panel .panel-button:active, #panel .panel-button:overview, #panel .panel-button:focus, #panel .panel-button:checked {
        box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.2); }
-       #panel .panel-button.clock-display:hover, #panel .panel-button.clock-display:active, #panel .panel-button.clock-display:overview, #panel .panel-button.clock-display:focus, #panel .panel-button.clock-display:checked {
+-      #panel .panel-button.clock-display:hover, #panel .panel-button.clock-display:active, #panel .panel-button.clock-display:overview, #panel .panel-button.clock-display:focus, #panel .panel-button.clock-display:checked {
++      #panel .panel-button:hover.clock-display, #panel .panel-button:active.clock-display, #panel .panel-button:overview.clock-display, #panel .panel-button:focus.clock-display, #panel .panel-button:checked.clock-display {
          box-shadow: none; }
-         #panel .panel-button.clock-display:hover .clock, #panel .panel-button.clock-display:active .clock, #panel .panel-button.clock-display:overview .clock, #panel .panel-button.clock-display:focus .clock, #panel .panel-button.clock-display:checked .clock {
+-        #panel .panel-button.clock-display:hover .clock, #panel .panel-button.clock-display:active .clock, #panel .panel-button.clock-display:overview .clock, #panel .panel-button.clock-display:focus .clock, #panel .panel-button.clock-display:checked .clock {
++        #panel .panel-button:hover.clock-display .clock, #panel .panel-button:active.clock-display .clock, #panel .panel-button:overview.clock-display .clock, #panel .panel-button:focus.clock-display .clock, #panel .panel-button:checked.clock-display .clock {
            box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.2); }
      #panel .panel-button .system-status-icon {
        icon-size: 1.09em;
-       padding: 5px;
-       margin: 0 4px; }
-     #panel .panel-button .panel-status-indicators-box .system-status-icon,
-     #panel .panel-button .panel-status-menu-box .system-status-icon {
+@@ -1250,13 +1250,16 @@ StScrollBar {
        margin: 0; }
      #panel .panel-button .app-menu-icon {
        -st-icon-style: symbolic; }
+-    #panel #panelActivities.panel-button {
 +    #panel .panel-button .panel-logo-icon {
 +      padding-right: .4em;
 +      icon-size: 1em; }
-     #panel #panelActivities.panel-button {
++    #panel .panel-button#panelActivities {
        -natural-hpadding: 18px; }
    #panel.unlock-screen .panel-button:hover, #panel.unlock-screen .panel-button:active, #panel.unlock-screen .panel-button:overview, #panel.unlock-screen .panel-button:focus, #panel.unlock-screen .panel-button:checked, #panel.login-screen .panel-button:hover, #panel.login-screen .panel-button:active, #panel.login-screen .panel-button:overview, #panel.login-screen .panel-button:focus, #panel.login-screen .panel-button:checked, #panel:overview .panel-button:hover, #panel:overview .panel-button:active, #panel:overview .panel-button:overview, #panel:overview .panel-button:focus, #panel:overview .panel-button:checked {
      box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.15); }
-     #panel.unlock-screen .panel-button.clock-display:hover, #panel.unlock-screen .panel-button.clock-display:active, #panel.unlock-screen .panel-button.clock-display:overview, #panel.unlock-screen .panel-button.clock-display:focus, #panel.unlock-screen .panel-button.clock-display:checked, #panel.login-screen .panel-button.clock-display:hover, #panel.login-screen .panel-button.clock-display:active, #panel.login-screen .panel-button.clock-display:overview, #panel.login-screen .panel-button.clock-display:focus, #panel.login-screen .panel-button.clock-display:checked, #panel:overview .panel-button.clock-display:hover, #panel:overview .panel-button.clock-display:active, #panel:overview .panel-button.clock-display:overview, #panel:overview .panel-button.clock-display:focus, #panel:overview .panel-button.clock-display:checked {
+-    #panel.unlock-screen .panel-button.clock-display:hover, #panel.unlock-screen .panel-button.clock-display:active, #panel.unlock-screen .panel-button.clock-display:overview, #panel.unlock-screen .panel-button.clock-display:focus, #panel.unlock-screen .panel-button.clock-display:checked, #panel.login-screen .panel-button.clock-display:hover, #panel.login-screen .panel-button.clock-display:active, #panel.login-screen .panel-button.clock-display:overview, #panel.login-screen .panel-button.clock-display:focus, #panel.login-screen .panel-button.clock-display:checked, #panel:overview .panel-button.clock-display:hover, #panel:overview .panel-button.clock-display:active, #panel:overview .panel-button.clock-display:overview, #panel:overview .panel-button.clock-display:focus, #panel:overview .panel-button.clock-display:checked {
++    #panel.unlock-screen .panel-button:hover.clock-display, #panel.unlock-screen .panel-button:active.clock-display, #panel.unlock-screen .panel-button:overview.clock-display, #panel.unlock-screen .panel-button:focus.clock-display, #panel.unlock-screen .panel-button:checked.clock-display, #panel.login-screen .panel-button:hover.clock-display, #panel.login-screen .panel-button:active.clock-display, #panel.login-screen .panel-button:overview.clock-display, #panel.login-screen .panel-button:focus.clock-display, #panel.login-screen .panel-button:checked.clock-display, #panel:overview .panel-button:hover.clock-display, #panel:overview .panel-button:active.clock-display, #panel:overview .panel-button:overview.clock-display, #panel:overview .panel-button:focus.clock-display, #panel:overview .panel-button:checked.clock-display {
        box-shadow: none; }
-       #panel.unlock-screen .panel-button.clock-display:hover .clock, #panel.unlock-screen .panel-button.clock-display:active .clock, #panel.unlock-screen .panel-button.clock-display:overview .clock, #panel.unlock-screen .panel-button.clock-display:focus .clock, #panel.unlock-screen .panel-button.clock-display:checked .clock, #panel.login-screen .panel-button.clock-display:hover .clock, #panel.login-screen .panel-button.clock-display:active .clock, #panel.login-screen .panel-button.clock-display:overview .clock, #panel.login-screen .panel-button.clock-display:focus .clock, #panel.login-screen .panel-button.clock-display:checked .clock, #panel:overview .panel-button.clock-display:hover .clock, #panel:overview .panel-button.clock-display:active .clock, #panel:overview .panel-button.clock-display:overview .clock, #panel:overview .panel-button.clock-display:focus .clock, #panel:overview .panel-button.clock-display:checked .clock {
+-      #panel.unlock-screen .panel-button.clock-display:hover .clock, #panel.unlock-screen .panel-button.clock-display:active .clock, #panel.unlock-screen .panel-button.clock-display:overview .clock, #panel.unlock-screen .panel-button.clock-display:focus .clock, #panel.unlock-screen .panel-button.clock-display:checked .clock, #panel.login-screen .panel-button.clock-display:hover .clock, #panel.login-screen .panel-button.clock-display:active .clock, #panel.login-screen .panel-button.clock-display:overview .clock, #panel.login-screen .panel-button.clock-display:focus .clock, #panel.login-screen .panel-button.clock-display:checked .clock, #panel:overview .panel-button.clock-display:hover .clock, #panel:overview .panel-button.clock-display:active .clock, #panel:overview .panel-button.clock-display:overview .clock, #panel:overview .panel-button.clock-display:focus .clock, #panel:overview .panel-button.clock-display:checked .clock {
++      #panel.unlock-screen .panel-button:hover.clock-display .clock, #panel.unlock-screen .panel-button:active.clock-display .clock, #panel.unlock-screen .panel-button:overview.clock-display .clock, #panel.unlock-screen .panel-button:focus.clock-display .clock, #panel.unlock-screen .panel-button:checked.clock-display .clock, #panel.login-screen .panel-button:hover.clock-display .clock, #panel.login-screen .panel-button:active.clock-display .clock, #panel.login-screen .panel-button:overview.clock-display .clock, #panel.login-screen .panel-button:focus.clock-display .clock, #panel.login-screen .panel-button:checked.clock-display .clock, #panel:overview .panel-button:hover.clock-display .clock, #panel:overview .panel-button:active.clock-display .clock, #panel:overview .panel-button:overview.clock-display .clock, #panel:overview .panel-button:focus.clock-display .clock, #panel:overview .panel-button:checked.clock-display .clock {
          box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.15); }
    #panel .panel-status-indicators-box,
    #panel .panel-status-menu-box {
-     spacing: 2px; }
-   #panel .power-status.panel-status-indicators-box {
-     spacing: 0; }
-   #panel .screencast-indicator,
-   #panel .remote-access-indicator {
-     color: #f57900; }
- 
- #appMenu {
-   spacing: 6px; }
-   #appMenu .label-shadow {
-     color: transparent; }
- 
- #appMenu .panel-status-menu-box {
-   padding: 0 6px;
-   spacing: 6px; }
- 
- /* Activities Ripple */
- .ripple-box {
-   background-color: rgba(158, 196, 235, 0.3);
-   box-shadow: 0 0 2px 2px #4a90d9;
-@@ -2039,74 +2042,107 @@ StScrollBar {
-     width: 2.18em;
+@@ -2028,11 +2031,15 @@ StScrollBar {
+         border-color: #184472;
+         background-color: #184472;
+         color: rgba(255, 255, 255, 0.7); }
++  .login-dialog .next-button,
+   .login-dialog .cancel-button,
+   .login-dialog .switch-user-button,
++  .login-dialog .login-dialog-auth-menu-button,
+   .login-dialog .login-dialog-session-list-button,
++  .unlock-dialog .next-button,
+   .unlock-dialog .cancel-button,
+   .unlock-dialog .switch-user-button,
++  .unlock-dialog .login-dialog-auth-menu-button,
+   .unlock-dialog .login-dialog-session-list-button {
+     padding: 0;
+     border-radius: 99px;
+@@ -2040,18 +2047,59 @@ StScrollBar {
      height: 2.18em;
      border-color: #202020;
      background-color: #202020; }
++    .login-dialog .next-button StIcon,
      .login-dialog .cancel-button StIcon,
      .login-dialog .switch-user-button StIcon,
++    .login-dialog .login-dialog-auth-menu-button StIcon,
      .login-dialog .login-dialog-session-list-button StIcon,
++    .unlock-dialog .next-button StIcon,
      .unlock-dialog .cancel-button StIcon,
      .unlock-dialog .switch-user-button StIcon,
++    .unlock-dialog .login-dialog-auth-menu-button StIcon,
      .unlock-dialog .login-dialog-session-list-button StIcon {
        icon-size: 1.09em; }
++  .login-dialog .next-button,
++  .unlock-dialog .next-button {
++    background-color: transparent !important; }
++  .login-dialog .switch-user-button,
++  .unlock-dialog .switch-user-button {
++    min-width: 8.5em;
++    min-height: 2.5em;
++    font-size: 10pt;
++    font-weight: bold; }
    .login-dialog .caps-lock-warning-label,
    .login-dialog .login-dialog-message-warning,
    .unlock-dialog .caps-lock-warning-label,
    .unlock-dialog .login-dialog-message-warning {
      color: #eeeeec; }
++  .login-dialog .login-dialog-prompt-layout.web-login-active,
++  .unlock-dialog .login-dialog-prompt-layout.web-login-active {
++    width: 34.5em; }
++  .login-dialog .login-dialog-prompt-entry-area,
++  .unlock-dialog .login-dialog-prompt-entry-area {
++    margin: 0.5em 20px; }
++  .login-dialog .login-dialog-prompt-entry,
++  .unlock-dialog .login-dialog-prompt-entry {
++    border-radius: 12px; }
++    .login-dialog .login-dialog-prompt-entry :ltr,
++    .unlock-dialog .login-dialog-prompt-entry :ltr {
++      padding-right: 2.5em; }
++    .login-dialog .login-dialog-prompt-entry :rtl,
++    .unlock-dialog .login-dialog-prompt-entry :rtl {
++      padding-left: 2.5em; }
++  .login-dialog .login-dialog-default-button-well :ltr,
++  .unlock-dialog .login-dialog-default-button-well :ltr {
++    margin-right: 0.5em; }
++  .login-dialog .login-dialog-default-button-well :rtl,
++  .unlock-dialog .login-dialog-default-button-well :rtl {
++    margin-left: 0.5em; }
++
++.login-dialog-spinner {
++  color: #eeeeec; }
++
++.login-dialog-bottom-button-group {
++  padding: 32px;
++  spacing: 16px; }
  
  .login-dialog-logo-bin {
    padding: 24px 0px; }
- 
- .login-dialog-banner {
-   color: #d6d6d1; }
- 
- .login-dialog-button-box {
-   width: 23em;
-   spacing: 5px; }
- 
+@@ -2066,6 +2114,10 @@ StScrollBar {
  .login-dialog-message {
    text-align: center; }
  
@@ -113,172 +139,371 @@ index b73f407..90f363c 100644
  .login-dialog-user-selection-box {
    padding: 100px 0px; }
  
- .login-dialog-not-listed-label {
-   padding-left: 2px; }
-   .login-dialog-not-listed-button:focus .login-dialog-not-listed-label, .login-dialog-not-listed-button:hover .login-dialog-not-listed-label {
-     color: #eeeeec; }
- 
- .login-dialog-not-listed-label {
-   font-size: 10pt;
-   font-weight: bold;
+@@ -2080,6 +2132,143 @@ StScrollBar {
    color: #a6a69b;
    padding-top: 1em; }
  
++.login-dialog-auth-menu-button-popup {
++  padding: 18px;
++  margin-right: 12px; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section {
++    padding-top: 6px; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section:first-child {
++      padding-top: 0; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section-label {
++      font-size: 10pt;
++      font-weight: bold;
++      color: #fff; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-icon {
++    color: #fff;
++    icon-size: 1.09em;
++    margin-right: 8px; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box {
++    spacing: 3px; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-name {
++      color: #fff;
++      font-size: 11pt;
++      font-weight: bold; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-description {
++      color: #fff;
++      font-size: 10pt; }
++
++.login-dialog-auth-menu-button-indicator {
++  background-color: transparent !important;
++  margin: 32px; }
++  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons {
++    spacing: 18px; }
++    .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons .login-dialog-auth-menu-button-indicator-icon {
++      icon-size: 2em; }
++  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-description {
++    font-size: 11pt;
++    font-weight: normal;
++    margin-left: 12px; }
++
++.login-dialog-auth-menu-button-indicator-description {
++  color: #eeeeec; }
++
++.login-dialog-button-box {
++  height: 4em; }
++
 +.login-dialog-auth-list-view {
-+  -st-vfade-offset: 1em; }
++  -st-vfade-offset: 3em;
++  max-height: 13em; }
 +
 +.login-dialog-auth-list {
-+  spacing: 6px;
-+  margin-left: 2em; }
++  spacing: 9px; }
 +
-+.login-dialog-auth-list-title {
-+  margin-left: 2em; }
-+
-+.login-dialog-auth-list-item {
++.login-dialog .login-dialog-auth-list-title,
++.login-dialog .login-dialog-auth-list-item {
 +  border-radius: 12px;
-+  padding: 6px;
 +  color: #a6a69b; }
-+  .login-dialog-auth-list-item:focus, .login-dialog-auth-list-item:selected {
++  .login-dialog .login-dialog-auth-list-title:focus, .login-dialog .login-dialog-auth-list-title:selected,
++  .login-dialog .login-dialog-auth-list-item:focus,
++  .login-dialog .login-dialog-auth-list-item:selected {
 +    background-color: #215d9c;
 +    color: #ffffff; }
 +
-+.login-dialog-auth-list-label {
++.login-dialog .login-dialog-auth-list-title {
++  background-color: rgba(238, 238, 236, 0.02) !important;
++  color: #eeeeec !important;
++  margin: 0.5em 20px; }
++
++.login-dialog .login-dialog-auth-list-item {
++  min-height: 3em;
++  padding: 9px;
++  margin-bottom: 4px;
++  margin-right: 4px;
++  background-color: rgba(238, 238, 236, 0.06); }
++  .login-dialog .login-dialog-auth-list-item.compact {
++    min-height: 1.3em; }
++
++.unlock-dialog .login-dialog-auth-list-item {
++  border: none;
++  color: #eeeeec;
++  background-color: rgba(238, 238, 236, 0.06);
++  border-radius: 12px;
++  min-height: 3em;
++  padding: 9px;
++  margin-bottom: 4px;
++  margin-right: 4px; }
++  .unlock-dialog .login-dialog-auth-list-item:hover, .unlock-dialog .login-dialog-auth-list-item:focus, .unlock-dialog .login-dialog-auth-list-item:selected {
++    background-color: rgba(238, 238, 236, 0.16); }
++  .unlock-dialog .login-dialog-auth-list-item:active {
++    background-color: rgba(238, 238, 236, 0.22); }
++
++.unlock-dialog .login-dialog-auth-list-title {
++  background-color: transparent !important;
++  border: none;
++  color: #eeeeec !important;
++  padding: 0;
++  margin: 0; }
++
++.login-dialog-auth-list-title-label {
 +  font-size: 13pt;
 +  font-weight: bold;
-+  padding-left: 15px; }
-+  .login-dialog-auth-list-label:ltr {
-+    padding-left: 14px;
-+    text-align: left; }
-+  .login-dialog-auth-list-label:rtl {
-+    padding-right: 14px;
-+    text-align: right; }
++  padding: 6px;
++  text-align: center; }
++
++.login-dialog-auth-list-item-title,
++.login-dialog-auth-list-item-subtitle {
++  font-size: 11pt;
++  text-align: center;
++  padding: 1.8px 2em; }
++
++.login-dialog-auth-list-item-title {
++  color: #eeeeec;
++  font-weight: bold; }
++
++.login-dialog-auth-list-item-subtitle {
++  color: #bebeb6;
++  font-weight: 500; }
++
++.login-dialog-item-icon {
++  width: 1.3em;
++  height: 1.3em;
++  color: #eeeeec;
++  padding: 4.2px 6px;
++  border-radius: 8px; }
++  .login-dialog-item-icon:hover {
++    background-color: #282828; }
++  .login-dialog-item-icon-popup.popup-menu {
++    min-width: 0; }
++  .login-dialog-item-icon-popup-box {
++    padding: 6px 0; }
++  .login-dialog-item-icon-popup-box .login-dialog-item-icon-popup-labels {
++    spacing: 3px;
++    font-weight: bold;
++    text-align: center; }
++    .login-dialog-item-icon-popup-box .login-dialog-item-icon-popup-labels > :first-child {
++      color: #b3b3b3;
++      font-weight: 500; }
++    .login-dialog-item-icon-popup-box .login-dialog-item-icon-popup-labels > :last-child {
++      color: #fff; }
 +
  .login-dialog-user-list-view {
    -st-vfade-offset: 1em; }
  
- .login-dialog-user-list {
+@@ -2135,7 +2324,7 @@ StScrollBar {
+   padding-top: 24px;
+   padding-bottom: 12px;
    spacing: 12px;
-   width: 23em; }
-   .login-dialog-user-list:expanded .login-dialog-user-list-item:selected {
-     background-color: #215d9c;
-     color: #ffffff; }
-   .login-dialog-user-list:expanded .login-dialog-user-list-item:logged-in {
-     border-right: 2px solid #215d9c; }
+-  width: 23em; }
++  width: 27.6em; }
  
- .login-dialog-user-list-item {
-   border-radius: 12px;
-   padding: 6px;
-   color: #a6a69b; }
-   .login-dialog-user-list-item:ltr .user-widget {
-     padding-right: 1em; }
-   .login-dialog-user-list-item:rtl .user-widget {
-     padding-left: 1em; }
-   .login-dialog-user-list-item .login-dialog-timed-login-indicator {
-     height: 2px;
-     margin-top: 6px;
-     background-color: #eeeeec; }
-   .login-dialog-user-list-item:focus .login-dialog-timed-login-indicator {
-     background-color: #ffffff; }
+ .login-dialog-prompt-entry {
+   height: 1.5em; }
+@@ -2145,6 +2334,75 @@ StScrollBar {
+   font-size: 12pt;
+   padding-top: 1em; }
  
- .user-widget-label {
-   color: #eeeeec; }
++.web-login-spinner {
++  background-color: rgba(0, 0, 0, 0.5);
++  border: 5px rgba(0, 0, 0, 0);
++  border-radius: 50px; }
++
++.web-login-title-label {
++  font-size: 11pt;
++  color: #a6a69b;
++  text-align: center; }
++
++.web-login-url-label {
++  font-size: 11pt;
++  font-family: monospace;
++  color: #eeeeec;
++  text-align: center; }
++  .web-login-url-label.web-login-url-label-long {
++    font-size: 9pt; }
++
++.web-login-code-title-label {
++  font-size: 11pt;
++  color: #eeeeec;
++  text-align: center; }
++
++.web-login-code-label {
++  font-size: 11pt;
++  color: #eeeeec;
++  font-weight: bold;
++  text-align: center; }
++
++.web-login-prompt {
++  padding-top: 6px;
++  padding-bottom: 6px;
++  padding-left: 27px;
++  padding-right: 27px;
++  spacing: 1.75em; }
++
++.login-dialog .login-button,
++.login-dialog .web-login-prompt-button,
++.unlock-dialog .login-button,
++.unlock-dialog .web-login-prompt-button {
++  font-size: 13pt;
++  color: #eeeeec;
++  text-align: center;
++  font-weight: bold;
++  border-radius: 32px;
++  background-color: rgba(238, 238, 236, 0.06); }
++
++.login-dialog .login-button,
++.unlock-dialog .login-button {
++  padding: 9px 18px;
++  margin: 0.2em 20px;
++  width: 8em; }
++
++.login-dialog .web-login-prompt-button,
++.unlock-dialog .web-login-prompt-button {
++  padding: 9px 18px;
++  margin: 24px 8px;
++  width: 7em; }
++
++.login-dialog .login-button:hover, .login-dialog .login-button:focus,
++.login-dialog .web-login-prompt-button:hover,
++.login-dialog .web-login-prompt-button:focus {
++  background-color: #215d9c; }
++
++.unlock-dialog .login-button:hover, .unlock-dialog .login-button:focus,
++.unlock-dialog .web-login-prompt-button:hover,
++.unlock-dialog .web-login-prompt-button:focus {
++  background-color: rgba(238, 238, 236, 0.16); }
++
+ /* Screen Shield */
+ .unlock-dialog-clock {
+   color: white;
+@@ -2210,6 +2468,13 @@ StScrollBar {
+   #unlockDialogNotifications StButton#vhandle:active, #unlockDialogNotifications StButton#hhandle:active {
+     background-color: rgba(33, 93, 156, 0.5); }
+ 
++.qr-code {
++  border-radius: 4px;
++  border-width: 1em;
++  background-color: #eeeeec;
++  border-color: #eeeeec;
++  color: #282828; }
++
+ stage {
+   -st-icon-style: symbolic; }
  
 diff --git a/data/theme/gnome-shell.css b/data/theme/gnome-shell.css
-index f93819b..d3d7fc8 100644
+index f93819b..afe0767 100644
 --- a/data/theme/gnome-shell.css
 +++ b/data/theme/gnome-shell.css
-@@ -1223,60 +1223,63 @@ StScrollBar {
-     -panel-corner-border-color: transparent;
-     -panel-corner-opacity: 1;
-     transition-duration: 250ms; }
-   #panel .panel-button {
-     font-weight: bold;
-     color: #ddd;
-     -natural-hpadding: 12px;
-     -minimum-hpadding: 6px;
-     transition-duration: 150ms;
-     border: 3px solid transparent;
-     border-radius: 99px; }
-     #panel .panel-button.clock-display .clock {
-       transition-duration: 150ms;
-       border: 3px solid transparent;
+@@ -173,7 +173,7 @@ StEntry {
+     icon-size: 1.09em;
+     padding: 0 4px; }
+   StEntry StLabel.hint-text {
+-    margin-left: 2px;
++    margin-left: 8px;
+     color: rgba(238, 238, 236, 0.7); }
+ 
+ /* Buttons */
+@@ -1237,9 +1237,9 @@ StScrollBar {
        border-radius: 99px; }
      #panel .panel-button:hover, #panel .panel-button:active, #panel .panel-button:overview, #panel .panel-button:focus, #panel .panel-button:checked {
        box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.2); }
-       #panel .panel-button.clock-display:hover, #panel .panel-button.clock-display:active, #panel .panel-button.clock-display:overview, #panel .panel-button.clock-display:focus, #panel .panel-button.clock-display:checked {
+-      #panel .panel-button.clock-display:hover, #panel .panel-button.clock-display:active, #panel .panel-button.clock-display:overview, #panel .panel-button.clock-display:focus, #panel .panel-button.clock-display:checked {
++      #panel .panel-button:hover.clock-display, #panel .panel-button:active.clock-display, #panel .panel-button:overview.clock-display, #panel .panel-button:focus.clock-display, #panel .panel-button:checked.clock-display {
          box-shadow: none; }
-         #panel .panel-button.clock-display:hover .clock, #panel .panel-button.clock-display:active .clock, #panel .panel-button.clock-display:overview .clock, #panel .panel-button.clock-display:focus .clock, #panel .panel-button.clock-display:checked .clock {
+-        #panel .panel-button.clock-display:hover .clock, #panel .panel-button.clock-display:active .clock, #panel .panel-button.clock-display:overview .clock, #panel .panel-button.clock-display:focus .clock, #panel .panel-button.clock-display:checked .clock {
++        #panel .panel-button:hover.clock-display .clock, #panel .panel-button:active.clock-display .clock, #panel .panel-button:overview.clock-display .clock, #panel .panel-button:focus.clock-display .clock, #panel .panel-button:checked.clock-display .clock {
            box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.2); }
      #panel .panel-button .system-status-icon {
        icon-size: 1.09em;
-       padding: 5px;
-       margin: 0 4px; }
-     #panel .panel-button .panel-status-indicators-box .system-status-icon,
-     #panel .panel-button .panel-status-menu-box .system-status-icon {
+@@ -1250,13 +1250,16 @@ StScrollBar {
        margin: 0; }
      #panel .panel-button .app-menu-icon {
        -st-icon-style: symbolic; }
+-    #panel #panelActivities.panel-button {
 +    #panel .panel-button .panel-logo-icon {
 +      padding-right: .4em;
 +      icon-size: 1em; }
-     #panel #panelActivities.panel-button {
++    #panel .panel-button#panelActivities {
        -natural-hpadding: 18px; }
    #panel.unlock-screen .panel-button:hover, #panel.unlock-screen .panel-button:active, #panel.unlock-screen .panel-button:overview, #panel.unlock-screen .panel-button:focus, #panel.unlock-screen .panel-button:checked, #panel.login-screen .panel-button:hover, #panel.login-screen .panel-button:active, #panel.login-screen .panel-button:overview, #panel.login-screen .panel-button:focus, #panel.login-screen .panel-button:checked, #panel:overview .panel-button:hover, #panel:overview .panel-button:active, #panel:overview .panel-button:overview, #panel:overview .panel-button:focus, #panel:overview .panel-button:checked {
      box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.15); }
-     #panel.unlock-screen .panel-button.clock-display:hover, #panel.unlock-screen .panel-button.clock-display:active, #panel.unlock-screen .panel-button.clock-display:overview, #panel.unlock-screen .panel-button.clock-display:focus, #panel.unlock-screen .panel-button.clock-display:checked, #panel.login-screen .panel-button.clock-display:hover, #panel.login-screen .panel-button.clock-display:active, #panel.login-screen .panel-button.clock-display:overview, #panel.login-screen .panel-button.clock-display:focus, #panel.login-screen .panel-button.clock-display:checked, #panel:overview .panel-button.clock-display:hover, #panel:overview .panel-button.clock-display:active, #panel:overview .panel-button.clock-display:overview, #panel:overview .panel-button.clock-display:focus, #panel:overview .panel-button.clock-display:checked {
+-    #panel.unlock-screen .panel-button.clock-display:hover, #panel.unlock-screen .panel-button.clock-display:active, #panel.unlock-screen .panel-button.clock-display:overview, #panel.unlock-screen .panel-button.clock-display:focus, #panel.unlock-screen .panel-button.clock-display:checked, #panel.login-screen .panel-button.clock-display:hover, #panel.login-screen .panel-button.clock-display:active, #panel.login-screen .panel-button.clock-display:overview, #panel.login-screen .panel-button.clock-display:focus, #panel.login-screen .panel-button.clock-display:checked, #panel:overview .panel-button.clock-display:hover, #panel:overview .panel-button.clock-display:active, #panel:overview .panel-button.clock-display:overview, #panel:overview .panel-button.clock-display:focus, #panel:overview .panel-button.clock-display:checked {
++    #panel.unlock-screen .panel-button:hover.clock-display, #panel.unlock-screen .panel-button:active.clock-display, #panel.unlock-screen .panel-button:overview.clock-display, #panel.unlock-screen .panel-button:focus.clock-display, #panel.unlock-screen .panel-button:checked.clock-display, #panel.login-screen .panel-button:hover.clock-display, #panel.login-screen .panel-button:active.clock-display, #panel.login-screen .panel-button:overview.clock-display, #panel.login-screen .panel-button:focus.clock-display, #panel.login-screen .panel-button:checked.clock-display, #panel:overview .panel-button:hover.clock-display, #panel:overview .panel-button:active.clock-display, #panel:overview .panel-button:overview.clock-display, #panel:overview .panel-button:focus.clock-display, #panel:overview .panel-button:checked.clock-display {
        box-shadow: none; }
-       #panel.unlock-screen .panel-button.clock-display:hover .clock, #panel.unlock-screen .panel-button.clock-display:active .clock, #panel.unlock-screen .panel-button.clock-display:overview .clock, #panel.unlock-screen .panel-button.clock-display:focus .clock, #panel.unlock-screen .panel-button.clock-display:checked .clock, #panel.login-screen .panel-button.clock-display:hover .clock, #panel.login-screen .panel-button.clock-display:active .clock, #panel.login-screen .panel-button.clock-display:overview .clock, #panel.login-screen .panel-button.clock-display:focus .clock, #panel.login-screen .panel-button.clock-display:checked .clock, #panel:overview .panel-button.clock-display:hover .clock, #panel:overview .panel-button.clock-display:active .clock, #panel:overview .panel-button.clock-display:overview .clock, #panel:overview .panel-button.clock-display:focus .clock, #panel:overview .panel-button.clock-display:checked .clock {
+-      #panel.unlock-screen .panel-button.clock-display:hover .clock, #panel.unlock-screen .panel-button.clock-display:active .clock, #panel.unlock-screen .panel-button.clock-display:overview .clock, #panel.unlock-screen .panel-button.clock-display:focus .clock, #panel.unlock-screen .panel-button.clock-display:checked .clock, #panel.login-screen .panel-button.clock-display:hover .clock, #panel.login-screen .panel-button.clock-display:active .clock, #panel.login-screen .panel-button.clock-display:overview .clock, #panel.login-screen .panel-button.clock-display:focus .clock, #panel.login-screen .panel-button.clock-display:checked .clock, #panel:overview .panel-button.clock-display:hover .clock, #panel:overview .panel-button.clock-display:active .clock, #panel:overview .panel-button.clock-display:overview .clock, #panel:overview .panel-button.clock-display:focus .clock, #panel:overview .panel-button.clock-display:checked .clock {
++      #panel.unlock-screen .panel-button:hover.clock-display .clock, #panel.unlock-screen .panel-button:active.clock-display .clock, #panel.unlock-screen .panel-button:overview.clock-display .clock, #panel.unlock-screen .panel-button:focus.clock-display .clock, #panel.unlock-screen .panel-button:checked.clock-display .clock, #panel.login-screen .panel-button:hover.clock-display .clock, #panel.login-screen .panel-button:active.clock-display .clock, #panel.login-screen .panel-button:overview.clock-display .clock, #panel.login-screen .panel-button:focus.clock-display .clock, #panel.login-screen .panel-button:checked.clock-display .clock, #panel:overview .panel-button:hover.clock-display .clock, #panel:overview .panel-button:active.clock-display .clock, #panel:overview .panel-button:overview.clock-display .clock, #panel:overview .panel-button:focus.clock-display .clock, #panel:overview .panel-button:checked.clock-display .clock {
          box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.15); }
    #panel .panel-status-indicators-box,
    #panel .panel-status-menu-box {
-     spacing: 2px; }
-   #panel .power-status.panel-status-indicators-box {
-     spacing: 0; }
-   #panel .screencast-indicator,
-   #panel .remote-access-indicator {
-     color: #f57900; }
- 
- #appMenu {
-   spacing: 6px; }
-   #appMenu .label-shadow {
-     color: transparent; }
- 
- #appMenu .panel-status-menu-box {
-   padding: 0 6px;
-   spacing: 6px; }
- 
- /* Activities Ripple */
- .ripple-box {
-   background-color: rgba(188, 214, 246, 0.3);
-   box-shadow: 0 0 2px 2px #629fea;
-@@ -2039,74 +2042,107 @@ StScrollBar {
-     width: 2.18em;
+@@ -2028,11 +2031,15 @@ StScrollBar {
+         border-color: #15539e;
+         background-color: #15539e;
+         color: rgba(255, 255, 255, 0.7); }
++  .login-dialog .next-button,
+   .login-dialog .cancel-button,
+   .login-dialog .switch-user-button,
++  .login-dialog .login-dialog-auth-menu-button,
+   .login-dialog .login-dialog-session-list-button,
++  .unlock-dialog .next-button,
+   .unlock-dialog .cancel-button,
+   .unlock-dialog .switch-user-button,
++  .unlock-dialog .login-dialog-auth-menu-button,
+   .unlock-dialog .login-dialog-session-list-button {
+     padding: 0;
+     border-radius: 99px;
+@@ -2040,18 +2047,59 @@ StScrollBar {
      height: 2.18em;
      border-color: #202020;
      background-color: #202020; }
++    .login-dialog .next-button StIcon,
      .login-dialog .cancel-button StIcon,
      .login-dialog .switch-user-button StIcon,
++    .login-dialog .login-dialog-auth-menu-button StIcon,
      .login-dialog .login-dialog-session-list-button StIcon,
++    .unlock-dialog .next-button StIcon,
      .unlock-dialog .cancel-button StIcon,
      .unlock-dialog .switch-user-button StIcon,
++    .unlock-dialog .login-dialog-auth-menu-button StIcon,
      .unlock-dialog .login-dialog-session-list-button StIcon {
        icon-size: 1.09em; }
++  .login-dialog .next-button,
++  .unlock-dialog .next-button {
++    background-color: transparent !important; }
++  .login-dialog .switch-user-button,
++  .unlock-dialog .switch-user-button {
++    min-width: 8.5em;
++    min-height: 2.5em;
++    font-size: 10pt;
++    font-weight: bold; }
    .login-dialog .caps-lock-warning-label,
    .login-dialog .login-dialog-message-warning,
    .unlock-dialog .caps-lock-warning-label,
    .unlock-dialog .login-dialog-message-warning {
      color: #eeeeec; }
++  .login-dialog .login-dialog-prompt-layout.web-login-active,
++  .unlock-dialog .login-dialog-prompt-layout.web-login-active {
++    width: 34.5em; }
++  .login-dialog .login-dialog-prompt-entry-area,
++  .unlock-dialog .login-dialog-prompt-entry-area {
++    margin: 0.5em 20px; }
++  .login-dialog .login-dialog-prompt-entry,
++  .unlock-dialog .login-dialog-prompt-entry {
++    border-radius: 12px; }
++    .login-dialog .login-dialog-prompt-entry :ltr,
++    .unlock-dialog .login-dialog-prompt-entry :ltr {
++      padding-right: 2.5em; }
++    .login-dialog .login-dialog-prompt-entry :rtl,
++    .unlock-dialog .login-dialog-prompt-entry :rtl {
++      padding-left: 2.5em; }
++  .login-dialog .login-dialog-default-button-well :ltr,
++  .unlock-dialog .login-dialog-default-button-well :ltr {
++    margin-right: 0.5em; }
++  .login-dialog .login-dialog-default-button-well :rtl,
++  .unlock-dialog .login-dialog-default-button-well :rtl {
++    margin-left: 0.5em; }
++
++.login-dialog-spinner {
++  color: #eeeeec; }
++
++.login-dialog-bottom-button-group {
++  padding: 32px;
++  spacing: 16px; }
  
  .login-dialog-logo-bin {
    padding: 24px 0px; }
- 
- .login-dialog-banner {
-   color: #d6d6d1; }
- 
- .login-dialog-button-box {
-   width: 23em;
-   spacing: 5px; }
- 
+@@ -2066,6 +2114,10 @@ StScrollBar {
  .login-dialog-message {
    text-align: center; }
  
@@ -289,76 +514,246 @@ index f93819b..d3d7fc8 100644
  .login-dialog-user-selection-box {
    padding: 100px 0px; }
  
- .login-dialog-not-listed-label {
-   padding-left: 2px; }
-   .login-dialog-not-listed-button:focus .login-dialog-not-listed-label, .login-dialog-not-listed-button:hover .login-dialog-not-listed-label {
-     color: #eeeeec; }
- 
- .login-dialog-not-listed-label {
-   font-size: 10pt;
-   font-weight: bold;
+@@ -2080,6 +2132,143 @@ StScrollBar {
    color: #a6a69b;
    padding-top: 1em; }
  
++.login-dialog-auth-menu-button-popup {
++  padding: 18px;
++  margin-right: 12px; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section {
++    padding-top: 6px; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section:first-child {
++      padding-top: 0; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-section-label {
++      font-size: 10pt;
++      font-weight: bold;
++      color: #eeeeec; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-icon {
++    color: #eeeeec;
++    icon-size: 1.09em;
++    margin-right: 8px; }
++  .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box {
++    spacing: 3px; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-name {
++      color: #eeeeec;
++      font-size: 11pt;
++      font-weight: bold; }
++    .login-dialog-auth-menu-button-popup .login-dialog-auth-menu-item-box-description {
++      color: #eeeeec;
++      font-size: 10pt; }
++
++.login-dialog-auth-menu-button-indicator {
++  background-color: transparent !important;
++  margin: 32px; }
++  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons {
++    spacing: 18px; }
++    .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-icons .login-dialog-auth-menu-button-indicator-icon {
++      icon-size: 2em; }
++  .login-dialog-auth-menu-button-indicator .login-dialog-auth-menu-button-indicator-description {
++    font-size: 11pt;
++    font-weight: normal;
++    margin-left: 12px; }
++
++.login-dialog-auth-menu-button-indicator-description {
++  color: #eeeeec; }
++
++.login-dialog-button-box {
++  height: 4em; }
++
 +.login-dialog-auth-list-view {
-+  -st-vfade-offset: 1em; }
++  -st-vfade-offset: 3em;
++  max-height: 13em; }
 +
 +.login-dialog-auth-list {
-+  spacing: 6px;
-+  margin-left: 2em; }
++  spacing: 9px; }
 +
-+.login-dialog-auth-list-title {
-+  margin-left: 2em; }
-+
-+.login-dialog-auth-list-item {
++.login-dialog .login-dialog-auth-list-title,
++.login-dialog .login-dialog-auth-list-item {
 +  border-radius: 12px;
-+  padding: 6px;
 +  color: #a6a69b; }
-+  .login-dialog-auth-list-item:focus, .login-dialog-auth-list-item:selected {
++  .login-dialog .login-dialog-auth-list-title:focus, .login-dialog .login-dialog-auth-list-title:selected,
++  .login-dialog .login-dialog-auth-list-item:focus,
++  .login-dialog .login-dialog-auth-list-item:selected {
 +    background-color: #1b6acb;
 +    color: #fff; }
 +
-+.login-dialog-auth-list-label {
++.login-dialog .login-dialog-auth-list-title {
++  background-color: rgba(238, 238, 236, 0.02) !important;
++  color: #eeeeec !important;
++  margin: 0.5em 20px; }
++
++.login-dialog .login-dialog-auth-list-item {
++  min-height: 3em;
++  padding: 9px;
++  margin-bottom: 4px;
++  margin-right: 4px;
++  background-color: rgba(238, 238, 236, 0.06); }
++  .login-dialog .login-dialog-auth-list-item.compact {
++    min-height: 1.3em; }
++
++.unlock-dialog .login-dialog-auth-list-item {
++  border: none;
++  color: #eeeeec;
++  background-color: rgba(238, 238, 236, 0.06);
++  border-radius: 12px;
++  min-height: 3em;
++  padding: 9px;
++  margin-bottom: 4px;
++  margin-right: 4px; }
++  .unlock-dialog .login-dialog-auth-list-item:hover, .unlock-dialog .login-dialog-auth-list-item:focus, .unlock-dialog .login-dialog-auth-list-item:selected {
++    background-color: rgba(238, 238, 236, 0.16); }
++  .unlock-dialog .login-dialog-auth-list-item:active {
++    background-color: rgba(238, 238, 236, 0.22); }
++
++.unlock-dialog .login-dialog-auth-list-title {
++  background-color: transparent !important;
++  border: none;
++  color: #eeeeec !important;
++  padding: 0;
++  margin: 0; }
++
++.login-dialog-auth-list-title-label {
 +  font-size: 13pt;
 +  font-weight: bold;
-+  padding-left: 15px; }
-+  .login-dialog-auth-list-label:ltr {
-+    padding-left: 14px;
-+    text-align: left; }
-+  .login-dialog-auth-list-label:rtl {
-+    padding-right: 14px;
-+    text-align: right; }
++  padding: 6px;
++  text-align: center; }
++
++.login-dialog-auth-list-item-title,
++.login-dialog-auth-list-item-subtitle {
++  font-size: 11pt;
++  text-align: center;
++  padding: 1.8px 2em; }
++
++.login-dialog-auth-list-item-title {
++  color: #eeeeec;
++  font-weight: bold; }
++
++.login-dialog-auth-list-item-subtitle {
++  color: #bebeb6;
++  font-weight: 500; }
++
++.login-dialog-item-icon {
++  width: 1.3em;
++  height: 1.3em;
++  color: #eeeeec;
++  padding: 4.2px 6px;
++  border-radius: 8px; }
++  .login-dialog-item-icon:hover {
++    background-color: #282828; }
++  .login-dialog-item-icon-popup.popup-menu {
++    min-width: 0; }
++  .login-dialog-item-icon-popup-box {
++    padding: 6px 0; }
++  .login-dialog-item-icon-popup-box .login-dialog-item-icon-popup-labels {
++    spacing: 3px;
++    font-weight: bold;
++    text-align: center; }
++    .login-dialog-item-icon-popup-box .login-dialog-item-icon-popup-labels > :first-child {
++      color: #a6a69b;
++      font-weight: 500; }
++    .login-dialog-item-icon-popup-box .login-dialog-item-icon-popup-labels > :last-child {
++      color: #eeeeec; }
 +
  .login-dialog-user-list-view {
    -st-vfade-offset: 1em; }
  
- .login-dialog-user-list {
+@@ -2135,7 +2324,7 @@ StScrollBar {
+   padding-top: 24px;
+   padding-bottom: 12px;
    spacing: 12px;
-   width: 23em; }
-   .login-dialog-user-list:expanded .login-dialog-user-list-item:selected {
-     background-color: #1b6acb;
-     color: #fff; }
-   .login-dialog-user-list:expanded .login-dialog-user-list-item:logged-in {
-     border-right: 2px solid #1b6acb; }
+-  width: 23em; }
++  width: 27.6em; }
  
- .login-dialog-user-list-item {
-   border-radius: 12px;
-   padding: 6px;
-   color: #a6a69b; }
-   .login-dialog-user-list-item:ltr .user-widget {
-     padding-right: 1em; }
-   .login-dialog-user-list-item:rtl .user-widget {
-     padding-left: 1em; }
-   .login-dialog-user-list-item .login-dialog-timed-login-indicator {
-     height: 2px;
-     margin-top: 6px;
-     background-color: #eeeeec; }
-   .login-dialog-user-list-item:focus .login-dialog-timed-login-indicator {
-     background-color: #fff; }
+ .login-dialog-prompt-entry {
+   height: 1.5em; }
+@@ -2145,6 +2334,75 @@ StScrollBar {
+   font-size: 12pt;
+   padding-top: 1em; }
  
- .user-widget-label {
-   color: #eeeeec; }
- 
++.web-login-spinner {
++  background-color: rgba(0, 0, 0, 0.5);
++  border: 5px rgba(0, 0, 0, 0);
++  border-radius: 50px; }
++
++.web-login-title-label {
++  font-size: 11pt;
++  color: #a6a69b;
++  text-align: center; }
++
++.web-login-url-label {
++  font-size: 11pt;
++  font-family: monospace;
++  color: #eeeeec;
++  text-align: center; }
++  .web-login-url-label.web-login-url-label-long {
++    font-size: 9pt; }
++
++.web-login-code-title-label {
++  font-size: 11pt;
++  color: #eeeeec;
++  text-align: center; }
++
++.web-login-code-label {
++  font-size: 11pt;
++  color: #eeeeec;
++  font-weight: bold;
++  text-align: center; }
++
++.web-login-prompt {
++  padding-top: 6px;
++  padding-bottom: 6px;
++  padding-left: 27px;
++  padding-right: 27px;
++  spacing: 1.75em; }
++
++.login-dialog .login-button,
++.login-dialog .web-login-prompt-button,
++.unlock-dialog .login-button,
++.unlock-dialog .web-login-prompt-button {
++  font-size: 13pt;
++  color: #eeeeec;
++  text-align: center;
++  font-weight: bold;
++  border-radius: 32px;
++  background-color: rgba(238, 238, 236, 0.06); }
++
++.login-dialog .login-button,
++.unlock-dialog .login-button {
++  padding: 9px 18px;
++  margin: 0.2em 20px;
++  width: 8em; }
++
++.login-dialog .web-login-prompt-button,
++.unlock-dialog .web-login-prompt-button {
++  padding: 9px 18px;
++  margin: 24px 8px;
++  width: 7em; }
++
++.login-dialog .login-button:hover, .login-dialog .login-button:focus,
++.login-dialog .web-login-prompt-button:hover,
++.login-dialog .web-login-prompt-button:focus {
++  background-color: #1b6acb; }
++
++.unlock-dialog .login-button:hover, .unlock-dialog .login-button:focus,
++.unlock-dialog .web-login-prompt-button:hover,
++.unlock-dialog .web-login-prompt-button:focus {
++  background-color: rgba(238, 238, 236, 0.16); }
++
+ /* Screen Shield */
+ .unlock-dialog-clock {
+   color: white;
+@@ -2209,3 +2467,10 @@ StScrollBar {
+     background-color: rgba(53, 53, 53, 0.5); }
+   #unlockDialogNotifications StButton#vhandle:active, #unlockDialogNotifications StButton#hhandle:active {
+     background-color: rgba(27, 106, 203, 0.5); }
++
++.qr-code {
++  border-radius: 4px;
++  border-width: 1em;
++  background-color: #eeeeec;
++  border-color: #eeeeec;
++  color: #282828; }
 -- 
-2.34.1
+2.55.0
 

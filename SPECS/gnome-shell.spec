@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        35%{?dist}.1
+Release:        37%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -40,6 +40,10 @@ Patch21: 0001-authPrompt-Connect-disable-show-password-key-with-pa.patch
 Patch22: 0001-gdm-util-Early-initialize-all-internal-properties.patch
 Patch23: 0001-main-Register-session-with-GDM-on-startup.patch
 Patch24: 0001-loginManager-Update-RegisterSession.patch
+# Passwordless GDM patch series
+Patch25: pre-changes-for-passwordless-gdm-backport.patch
+Patch26: 0001-Support-for-web-login-and-unified-auth-mechanism.patch
+Patch27: post-changes-for-passwordless-gdm-backport.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -280,6 +284,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %{_datadir}/dbus-1/interfaces/org.gnome.ShellSearchProvider2.xml
 %{_datadir}/icons/hicolor/scalable/apps/org.gnome.Shell.Extensions.svg
 %{_datadir}/icons/hicolor/symbolic/apps/org.gnome.Shell.Extensions-symbolic.svg
+%{_datadir}/icons/scalable/status/fingerprint-auth-symbolic.svg
+%{_datadir}/icons/scalable/status/vcard-symbolic.svg
 %{_userunitdir}/org.gnome.Shell-disable-extensions.service
 %{_userunitdir}/org.gnome.Shell.target
 %{_userunitdir}/org.gnome.Shell@wayland.service
@@ -309,14 +315,19 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
-* Fri May 29 2026 Joan Tomas Pelka <tpelka@redhat.com> - 40.10-35.1
-- triggering a new build in correct target
-  Resolves: RHEL-178703
+* Tue Aug 11 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-37
+- Update passwordless GDM backport patch series
+  Add required pre-changes and update post-changes
+  Resolves: RHEL-236554
 
-* Mon May 25 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-35
+* Mon May 25 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-36
 - Update fix of registering session
   Registering the display is needed too
-  Resolves: RHEL-178703
+  Resolves: RHEL-178690
+
+* Thu Apr 2 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-35
+- Backport passwordless GDM feature to RHEL 9
+  Resolves: RHEL-169914
 
 * Mon Mar 9 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-34
 - Fix to automatically start fingerprint when enabled
