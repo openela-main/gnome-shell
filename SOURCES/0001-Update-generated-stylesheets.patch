@@ -3,12 +3,12 @@ From: =?UTF-8?q?Florian=20M=C3=BCllner?= <fmuellner@redhat.com>
 Date: Tue, 8 Feb 2022 14:18:04 -0500
 
 ---
- data/theme/gnome-shell-high-contrast.css | 279 ++++++++++++++++++++++-
- data/theme/gnome-shell.css               | 279 ++++++++++++++++++++++-
- 2 files changed, 544 insertions(+), 14 deletions(-)
+ data/theme/gnome-shell-high-contrast.css | 278 ++++++++++++++++++++++-
+ data/theme/gnome-shell.css               | 278 ++++++++++++++++++++++-
+ 2 files changed, 540 insertions(+), 16 deletions(-)
 
 diff --git a/data/theme/gnome-shell-high-contrast.css b/data/theme/gnome-shell-high-contrast.css
-index b73f407..5444be1 100644
+index b73f407..be28dbb 100644
 --- a/data/theme/gnome-shell-high-contrast.css
 +++ b/data/theme/gnome-shell-high-contrast.css
 @@ -173,7 +173,7 @@ StEntry {
@@ -52,6 +52,15 @@ index b73f407..5444be1 100644
          box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.15); }
    #panel .panel-status-indicators-box,
    #panel .panel-status-menu-box {
+@@ -1946,7 +1949,7 @@ StScrollBar {
+ /* Login Dialog */
+ .login-dialog-banner-view {
+   padding-top: 24px;
+-  max-width: 23em; }
++  max-width: 27.6em; }
+ 
+ .login-dialog,
+ .unlock-dialog {
 @@ -2028,11 +2031,15 @@ StScrollBar {
          border-color: #184472;
          background-color: #184472;
@@ -68,7 +77,7 @@ index b73f407..5444be1 100644
    .unlock-dialog .login-dialog-session-list-button {
      padding: 0;
      border-radius: 99px;
-@@ -2040,18 +2047,59 @@ StScrollBar {
+@@ -2040,18 +2047,56 @@ StScrollBar {
      height: 2.18em;
      border-color: #202020;
      background-color: #202020; }
@@ -97,9 +106,6 @@ index b73f407..5444be1 100644
    .unlock-dialog .caps-lock-warning-label,
    .unlock-dialog .login-dialog-message-warning {
      color: #eeeeec; }
-+  .login-dialog .login-dialog-prompt-layout.web-login-active,
-+  .unlock-dialog .login-dialog-prompt-layout.web-login-active {
-+    width: 34.5em; }
 +  .login-dialog .login-dialog-prompt-entry-area,
 +  .unlock-dialog .login-dialog-prompt-entry-area {
 +    margin: 0.5em 20px; }
@@ -128,7 +134,7 @@ index b73f407..5444be1 100644
  
  .login-dialog-logo-bin {
    padding: 24px 0px; }
-@@ -2066,6 +2114,10 @@ StScrollBar {
+@@ -2066,6 +2111,10 @@ StScrollBar {
  .login-dialog-message {
    text-align: center; }
  
@@ -139,7 +145,7 @@ index b73f407..5444be1 100644
  .login-dialog-user-selection-box {
    padding: 100px 0px; }
  
-@@ -2080,6 +2132,143 @@ StScrollBar {
+@@ -2080,6 +2129,143 @@ StScrollBar {
    color: #a6a69b;
    padding-top: 1em; }
  
@@ -283,7 +289,7 @@ index b73f407..5444be1 100644
  .login-dialog-user-list-view {
    -st-vfade-offset: 1em; }
  
-@@ -2135,7 +2324,7 @@ StScrollBar {
+@@ -2135,7 +2321,7 @@ StScrollBar {
    padding-top: 24px;
    padding-bottom: 12px;
    spacing: 12px;
@@ -292,7 +298,7 @@ index b73f407..5444be1 100644
  
  .login-dialog-prompt-entry {
    height: 1.5em; }
-@@ -2145,6 +2334,75 @@ StScrollBar {
+@@ -2145,6 +2331,75 @@ StScrollBar {
    font-size: 12pt;
    padding-top: 1em; }
  
@@ -368,7 +374,7 @@ index b73f407..5444be1 100644
  /* Screen Shield */
  .unlock-dialog-clock {
    color: white;
-@@ -2210,6 +2468,13 @@ StScrollBar {
+@@ -2210,6 +2465,13 @@ StScrollBar {
    #unlockDialogNotifications StButton#vhandle:active, #unlockDialogNotifications StButton#hhandle:active {
      background-color: rgba(33, 93, 156, 0.5); }
  
@@ -383,7 +389,7 @@ index b73f407..5444be1 100644
    -st-icon-style: symbolic; }
  
 diff --git a/data/theme/gnome-shell.css b/data/theme/gnome-shell.css
-index f93819b..afe0767 100644
+index f93819b..7b54113 100644
 --- a/data/theme/gnome-shell.css
 +++ b/data/theme/gnome-shell.css
 @@ -173,7 +173,7 @@ StEntry {
@@ -427,6 +433,15 @@ index f93819b..afe0767 100644
          box-shadow: inset 0 0 0 100px rgba(255, 255, 255, 0.15); }
    #panel .panel-status-indicators-box,
    #panel .panel-status-menu-box {
+@@ -1946,7 +1949,7 @@ StScrollBar {
+ /* Login Dialog */
+ .login-dialog-banner-view {
+   padding-top: 24px;
+-  max-width: 23em; }
++  max-width: 27.6em; }
+ 
+ .login-dialog,
+ .unlock-dialog {
 @@ -2028,11 +2031,15 @@ StScrollBar {
          border-color: #15539e;
          background-color: #15539e;
@@ -443,7 +458,7 @@ index f93819b..afe0767 100644
    .unlock-dialog .login-dialog-session-list-button {
      padding: 0;
      border-radius: 99px;
-@@ -2040,18 +2047,59 @@ StScrollBar {
+@@ -2040,18 +2047,56 @@ StScrollBar {
      height: 2.18em;
      border-color: #202020;
      background-color: #202020; }
@@ -472,9 +487,6 @@ index f93819b..afe0767 100644
    .unlock-dialog .caps-lock-warning-label,
    .unlock-dialog .login-dialog-message-warning {
      color: #eeeeec; }
-+  .login-dialog .login-dialog-prompt-layout.web-login-active,
-+  .unlock-dialog .login-dialog-prompt-layout.web-login-active {
-+    width: 34.5em; }
 +  .login-dialog .login-dialog-prompt-entry-area,
 +  .unlock-dialog .login-dialog-prompt-entry-area {
 +    margin: 0.5em 20px; }
@@ -503,7 +515,7 @@ index f93819b..afe0767 100644
  
  .login-dialog-logo-bin {
    padding: 24px 0px; }
-@@ -2066,6 +2114,10 @@ StScrollBar {
+@@ -2066,6 +2111,10 @@ StScrollBar {
  .login-dialog-message {
    text-align: center; }
  
@@ -514,7 +526,7 @@ index f93819b..afe0767 100644
  .login-dialog-user-selection-box {
    padding: 100px 0px; }
  
-@@ -2080,6 +2132,143 @@ StScrollBar {
+@@ -2080,6 +2129,143 @@ StScrollBar {
    color: #a6a69b;
    padding-top: 1em; }
  
@@ -658,7 +670,7 @@ index f93819b..afe0767 100644
  .login-dialog-user-list-view {
    -st-vfade-offset: 1em; }
  
-@@ -2135,7 +2324,7 @@ StScrollBar {
+@@ -2135,7 +2321,7 @@ StScrollBar {
    padding-top: 24px;
    padding-bottom: 12px;
    spacing: 12px;
@@ -667,7 +679,7 @@ index f93819b..afe0767 100644
  
  .login-dialog-prompt-entry {
    height: 1.5em; }
-@@ -2145,6 +2334,75 @@ StScrollBar {
+@@ -2145,6 +2331,75 @@ StScrollBar {
    font-size: 12pt;
    padding-top: 1em; }
  
@@ -743,7 +755,7 @@ index f93819b..afe0767 100644
  /* Screen Shield */
  .unlock-dialog-clock {
    color: white;
-@@ -2209,3 +2467,10 @@ StScrollBar {
+@@ -2209,3 +2464,10 @@ StScrollBar {
      background-color: rgba(53, 53, 53, 0.5); }
    #unlockDialogNotifications StButton#vhandle:active, #unlockDialogNotifications StButton#hhandle:active {
      background-color: rgba(27, 106, 203, 0.5); }

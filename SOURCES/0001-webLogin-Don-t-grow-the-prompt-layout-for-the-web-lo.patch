@@ -1,0 +1,383 @@
+From c6d8ae1f8163c0d48ca0ed42a93840393b2cf764 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Wed, 16 Sep 2026 20:55:12 +0200
+Subject: [PATCH 1/6] webLogin: Don't grow the prompt layout for the web login
+ dialog
+
+The web-login-active style class widened .login-dialog-prompt-layout
+so long URIs would fit, but that meant the auth prompt container
+changed size when switching in and out of the web login flow.
+
+Keep the container the same width as the regular auth prompt instead,
+and let the URL label overflow past it when it doesn't fit its own
+allocation. The container background is transparent, so the overflow
+isn't visually jarring.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4434>
+---
+ js/gdm/authPrompt.js |  2 --
+ js/gdm/webLogin.js   | 44 +++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 43 insertions(+), 3 deletions(-)
+
+diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
+index 9073811..a997c28 100644
+--- a/js/gdm/authPrompt.js
++++ b/js/gdm/authPrompt.js
+@@ -559,7 +559,6 @@ var AuthPrompt = GObject.registerClass({
+         this._mainBox.show();
+ 
+         this.webLoginActive = false;
+-        this.remove_style_class_name('web-login-active');
+     }
+ 
+     _openWebLoginDialog() {
+@@ -571,7 +570,6 @@ var AuthPrompt = GObject.registerClass({
+         this.updateSensitivity({sensitive: true});
+ 
+         this.webLoginActive = true;
+-        this.add_style_class_name('web-login-active');
+     }
+ 
+     _onVerificationFailed({serviceName, canRetry}) {
+diff --git a/js/gdm/webLogin.js b/js/gdm/webLogin.js
+index ef22010..ffcf0dd 100644
+--- a/js/gdm/webLogin.js
++++ b/js/gdm/webLogin.js
+@@ -11,6 +11,43 @@ const QR_CODE_SIZE = 150;
+ const WEB_LOGIN_SPINNER_SIZE = 16;
+ const URL_LABEL_LONG_THRESHOLD = 45;
+ 
++class LabelOverlayLayout extends Clutter.LayoutManager {
++    static {
++        GObject.registerClass(this);
++    }
++
++    vfunc_get_preferred_width(_container, _forHeight) {
++        return [0, 0];
++    }
++
++    vfunc_get_preferred_height(container, forWidth) {
++        const child = container.get_first_child();
++        return child ? child.get_preferred_height(forWidth) : [0, 0];
++    }
++
++    vfunc_allocate(container, box) {
++        const child = container.get_first_child();
++        if (!child)
++            return;
++
++        const [, naturalWidth] = child.get_preferred_width(-1);
++
++        if (naturalWidth <= box.get_width()) {
++            child.allocate(box);
++            return;
++        }
++
++        const center = (box.x1 + box.x2) / 2;
++        const overflowBox = new Clutter.ActorBox({
++            x1: Math.floor(center - naturalWidth / 2),
++            x2: Math.floor(center + naturalWidth / 2),
++            y1: box.y1,
++            y2: box.y2,
++        });
++        child.allocate(overflowBox);
++    }
++}
++
+ var WebLoginPrompt = GObject.registerClass(
+ class WebLoginPrompt extends St.BoxLayout {
+     _init(params) {
+@@ -45,9 +82,14 @@ class WebLoginPrompt extends St.BoxLayout {
+ 
+         this._urlLabel = new St.Label({
+             style_class: 'web-login-url-label',
++            xAlign: Clutter.ActorAlign.CENTER,
++        });
++        const urlLabelBin = new St.Widget({
++            layout_manager: new LabelOverlayLayout(),
+             x_expand: true,
+         });
+-        this.add_child(this._urlLabel);
++        urlLabelBin.add_child(this._urlLabel);
++        this.add_child(urlLabelBin);
+ 
+         this._codeBox = new St.BoxLayout({
+             x_align: Clutter.ActorAlign.CENTER,
+-- 
+2.55.0
+
+From 48e56b2d976f92aab044a74ef231dbf2e9edc362 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Thu, 17 Sep 2026 13:00:32 +0200
+Subject: [PATCH 2/6] loginDialog: Fix placing authPrompt with fixed height
+
+The authPrompt is placed in a fixed y coordinate independently if its
+height changes. However there's the special case: when WebLoginDialog is
+displayed; it requires more height, so the fixed y coordinate is higher.
+
+The original approach added a margin on top which was removed when
+WebLoginDialog is visible. That margin affects the space required by the
+banner text. To respect the banner space we need to remove that margin.
+So now, remove the margin approach and just consider a higher fixed height
+when WebLoginDialog is visible.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4434>
+---
+ js/gdm/loginDialog.js | 15 ++++++++-------
+ js/ui/unlockDialog.js | 10 ++++++----
+ 2 files changed, 14 insertions(+), 11 deletions(-)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 3b06615..5f3d2c6 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -37,7 +37,8 @@ const {MessageType} = imports.gdm.userVerifier;
+ 
+ const _FADE_ANIMATION_TIME = 250;
+ const _SCROLL_ANIMATION_TIME = 500;
+-const _FIXED_TOP_ACTOR_HEIGHT = 300;
++const _FIXED_WEBLOGIN_HEIGHT = 550;
++const _FIXED_AUTHPROMPT_HEIGHT = 400;
+ const _TIMED_LOGIN_IDLE_THRESHOLD = 5.0;
+ const _PRIMARY_LOGIN_METHOD_SECTION_NAME = _('Login Options');
+ const _SESSION_TYPE_SECTION_NAME = _('Session Type');
+@@ -558,7 +559,7 @@ var LoginDialog = GObject.registerClass({
+         return actorBox;
+     }
+ 
+-    _getFixedTopActorAllocation(dialogBox, actor) {
++    _getFixedTopActorAllocation(dialogBox, actor, fixedHeight) {
+         const actorBox = new Clutter.ActorBox();
+ 
+         let [, , natWidth, natHeight] = actor.get_preferred_size();
+@@ -567,7 +568,7 @@ var LoginDialog = GObject.registerClass({
+         const centerX = dialogBox.x1 + dialogWidth / 2;
+         const centerY = dialogBox.y1 + dialogHeight / 2;
+ 
+-        const top = centerY - _FIXED_TOP_ACTOR_HEIGHT / 2;
++        const top = centerY - fixedHeight / 2;
+ 
+         natWidth = Math.min(natWidth, dialogWidth);
+         natHeight = Math.min(natHeight, dialogHeight);
+@@ -618,10 +619,10 @@ var LoginDialog = GObject.registerClass({
+         let authPromptAllocation = null;
+         let authPromptWidth = 0;
+         if (this._authPrompt.visible) {
+-            if (this._authPrompt.webLoginActive)
+-                authPromptAllocation = this._getCenterActorAllocation(dialogBox, this._authPrompt);
+-            else
+-                authPromptAllocation = this._getFixedTopActorAllocation(dialogBox, this._authPrompt);
++            const fixedHeight = this._authPrompt.webLoginActive
++                ? _FIXED_WEBLOGIN_HEIGHT : _FIXED_AUTHPROMPT_HEIGHT;
++            authPromptAllocation =
++                this._getFixedTopActorAllocation(dialogBox, this._authPrompt, fixedHeight);
+             authPromptWidth = authPromptAllocation.x2 - authPromptAllocation.x1;
+         }
+ 
+diff --git a/js/ui/unlockDialog.js b/js/ui/unlockDialog.js
+index 01ff03b..478ccc3 100644
+--- a/js/ui/unlockDialog.js
++++ b/js/ui/unlockDialog.js
+@@ -28,7 +28,8 @@ const FADE_OUT_SCALE = 0.3;
+ const BLUR_BRIGHTNESS = 0.55;
+ const BLUR_SIGMA = 60;
+ 
+-const FIXED_PROMPT_HEIGHT = 300;
++const FIXED_WEBLOGIN_HEIGHT = 550;
++const FIXED_AUTHPROMPT_HEIGHT = 400;
+ 
+ const SUMMARY_ICON_SIZE = 32;
+ 
+@@ -463,15 +464,16 @@ class UnlockDialogLayout extends Clutter.LayoutManager {
+ 
+         // Authentication Box
+         const dialog = container.get_parent();
++        const fixedHeight = dialog._authPrompt?.webLoginActive
++            ? FIXED_WEBLOGIN_HEIGHT : FIXED_AUTHPROMPT_HEIGHT;
+         let stackY;
+-        if (dialog._activePage === dialog._clock ||
+-            dialog._authPrompt?.webLoginActive) {
++        if (dialog._activePage === dialog._clock) {
+             stackY = Math.min(
+                 Math.floor(centerY - stackHeight / 2.0),
+                 height - stackHeight - maxNotificationsHeight);
+         } else {
+             stackY = Math.min(
+-                Math.floor(centerY - FIXED_PROMPT_HEIGHT / 2.0),
++                Math.floor(centerY - fixedHeight / 2.0),
+                 height - stackHeight - maxNotificationsHeight);
+         }
+ 
+-- 
+2.55.0
+From 90f34071cd7a5dfa657723284f4b3f7069e4b011 Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Thu, 17 Sep 2026 13:58:49 +0200
+Subject: [PATCH 3/6] loginDialog: Increase height of banner on narrow mode
+
+When the banner needs more space than the available and can't be
+displayed in wide mode (one side the banner, the other side the
+authPrompt), it'll be displayed above the authPrompt with a scrollView.
+
+Instead of only giving 50% of the available space, give it 70%. So
+it's not excessively shrunk.
+
+Also, add a couple of fixes to make it look right:
+  1. Vertically center the banner in the available space.
+  2. Match the banner's width with the authPromt's width.
+
+Part-of: <https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/4434>
+---
+ js/gdm/loginDialog.js | 15 ++++++---------
+ 1 file changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 5f3d2c6..a852431 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -655,7 +655,7 @@ var LoginDialog = GObject.registerClass({
+             else
+                 bannerSpace = 0;
+ 
+-            let leftOverYSpace = bannerSpace - bannerHeight;
++            const leftOverYSpace = bannerSpace - bannerHeight;
+ 
+             if (leftOverYSpace > 0) {
+                 // First figure out how much left over space is up top
+@@ -707,14 +707,11 @@ var LoginDialog = GObject.registerClass({
+                     // If we aren't going to do a wide view, then we need to limit
+                     // the height of the banner so it will present scrollbars
+ 
+-                    // First figure out how much space there is without the banner
+-                    leftOverYSpace += bannerHeight;
+-
+-                    // Then figure out how much of that space is up top
+-                    let availableTopSpace = Math.floor(leftOverYSpace / 2);
+-
+-                    // Then give all of that space to the banner
+-                    bannerAllocation.y2 = bannerAllocation.y1 + availableTopSpace;
++                    // Give 70% of the banner space to the banner itself, and
++                    // split the remaining 30% evenly above and below it
++                    const bannerSpacing = Math.floor(0.3 * bannerSpace);
++                    bannerAllocation.y1 += Math.floor(bannerSpacing / 2);
++                    bannerAllocation.y2 = bannerAllocation.y1 + (bannerSpace - bannerSpacing);
+                 }
+             }
+         } else if (userSelectionAllocation) {
+-- 
+2.55.0
+
+From 65d312020b602935cffc012b77aa8a0b2ebf96fa Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Thu, 17 Sep 2026 18:22:04 +0200
+Subject: [PATCH 4/6] style: Add missing style
+
+This version doesn't have styles at _login-lock.scss
+---
+ data/theme/gnome-shell-sass/widgets/_login-dialog.scss | 8 +-------
+ 1 file changed, 1 insertion(+), 7 deletions(-)
+
+diff --git a/data/theme/gnome-shell-sass/widgets/_login-dialog.scss b/data/theme/gnome-shell-sass/widgets/_login-dialog.scss
+index 800455c..aa93769 100644
+--- a/data/theme/gnome-shell-sass/widgets/_login-dialog.scss
++++ b/data/theme/gnome-shell-sass/widgets/_login-dialog.scss
+@@ -4,7 +4,7 @@ $_gdm_fg: $osd_fg_color;
+ 
+ .login-dialog-banner-view {
+   padding-top: 24px;
+-  max-width: 23em;
++  max-width: 23em * 1.2;
+ }
+ 
+ .login-dialog,
+@@ -103,12 +103,6 @@ $_gdm_fg: $osd_fg_color;
+     color: $osd_fg_color;
+   }
+ 
+-  .login-dialog-prompt-layout {
+-    &.web-login-active {
+-      width: 23em * 1.5;
+-    }
+-  }
+-
+   .login-dialog-prompt-entry-area {
+     margin: 0.5em $base_margin * 5;
+   }
+-- 
+2.55.0
+
+From 45ff8ea539ecc42585106686022bbd42d2b6a8cb Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Thu, 17 Sep 2026 18:39:19 +0200
+Subject: [PATCH 5/6] webLogin: Create class with expected format
+
+---
+ js/gdm/webLogin.js | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/js/gdm/webLogin.js b/js/gdm/webLogin.js
+index ffcf0dd..84eb297 100644
+--- a/js/gdm/webLogin.js
++++ b/js/gdm/webLogin.js
+@@ -11,11 +11,8 @@ const QR_CODE_SIZE = 150;
+ const WEB_LOGIN_SPINNER_SIZE = 16;
+ const URL_LABEL_LONG_THRESHOLD = 45;
+ 
++var LabelOverlayLayout = GObject.registerClass(
+ class LabelOverlayLayout extends Clutter.LayoutManager {
+-    static {
+-        GObject.registerClass(this);
+-    }
+-
+     vfunc_get_preferred_width(_container, _forHeight) {
+         return [0, 0];
+     }
+@@ -46,7 +43,7 @@ class LabelOverlayLayout extends Clutter.LayoutManager {
+         });
+         child.allocate(overflowBox);
+     }
+-}
++});
+ 
+ var WebLoginPrompt = GObject.registerClass(
+ class WebLoginPrompt extends St.BoxLayout {
+From 3c903d3757476e41df406b55f384e3ef970e2b3b Mon Sep 17 00:00:00 2001
+From: Joan Torres Lopez <joantolo@redhat.com>
+Date: Thu, 17 Sep 2026 18:40:04 +0200
+Subject: [PATCH 6/6] gdm: Use smaller authPromptHeight
+
+This vesion has a smaller authPrompt
+---
+ js/gdm/loginDialog.js | 2 +-
+ js/ui/unlockDialog.js | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/js/gdm/loginDialog.js b/js/gdm/loginDialog.js
+index 3f5eea0..293dc77 100644
+--- a/js/gdm/loginDialog.js
++++ b/js/gdm/loginDialog.js
+@@ -38,7 +38,7 @@ const {MessageType} = imports.gdm.userVerifier;
+ const _FADE_ANIMATION_TIME = 250;
+ const _SCROLL_ANIMATION_TIME = 500;
+ const _FIXED_WEBLOGIN_HEIGHT = 550;
+-const _FIXED_AUTHPROMPT_HEIGHT = 400;
++const _FIXED_AUTHPROMPT_HEIGHT = 300;
+ const _TIMED_LOGIN_IDLE_THRESHOLD = 5.0;
+ const _PRIMARY_LOGIN_METHOD_SECTION_NAME = _('Login Options');
+ const _SESSION_TYPE_SECTION_NAME = _('Session Type');
+diff --git a/js/ui/unlockDialog.js b/js/ui/unlockDialog.js
+index 478ccc3..81fb01e 100644
+--- a/js/ui/unlockDialog.js
++++ b/js/ui/unlockDialog.js
+@@ -29,7 +29,7 @@ const BLUR_BRIGHTNESS = 0.55;
+ const BLUR_SIGMA = 60;
+ 
+ const FIXED_WEBLOGIN_HEIGHT = 550;
+-const FIXED_AUTHPROMPT_HEIGHT = 400;
++const FIXED_AUTHPROMPT_HEIGHT = 300;
+ 
+ const SUMMARY_ICON_SIZE = 32;
+ 
+-- 
+2.55.0
+

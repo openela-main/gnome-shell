@@ -8,7 +8,7 @@
 
 Name:           gnome-shell
 Version:        40.10
-Release:        37%{?dist}
+Release:        38%{?dist}
 Summary:        Window management and application launching for GNOME
 
 License:        GPLv2+
@@ -44,6 +44,7 @@ Patch24: 0001-loginManager-Update-RegisterSession.patch
 Patch25: pre-changes-for-passwordless-gdm-backport.patch
 Patch26: 0001-Support-for-web-login-and-unified-auth-mechanism.patch
 Patch27: post-changes-for-passwordless-gdm-backport.patch
+Patch28: 0001-webLogin-Don-t-grow-the-prompt-layout-for-the-web-lo.patch
 
 # Misc.
 Patch30: 0001-panel-add-an-icon-to-the-ActivitiesButton.patch
@@ -315,6 +316,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/evolution-calendar.de
 %endif
 
 %changelog
+* Thu Sep 17 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-38
+- Fix layout in login screen when showing a banner
+  Resolves: RHEL-222692
+
 * Tue Aug 11 2026 Joan Torres Lopez <joantolo@redhat.com> - 40.10-37
 - Update passwordless GDM backport patch series
   Add required pre-changes and update post-changes
